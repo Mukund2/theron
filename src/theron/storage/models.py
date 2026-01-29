@@ -6,6 +6,13 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+# Import canonical enum definitions
+from ..sandbox.result import SandboxStatus
+from ..security.tagger import SourceTag
+
+# Re-export for convenience
+__all__ = ["SandboxStatus", "SourceTag"]
+
 
 class ActionStatus(str, Enum):
     """Status of an action."""
@@ -14,28 +21,6 @@ class ActionStatus(str, Enum):
     LOGGED = "logged"
     SANDBOXED = "sandboxed"
     BLOCKED = "blocked"
-
-
-class SandboxStatus(str, Enum):
-    """Status of a sandbox execution."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
-    FAILED = "failed"
-
-
-class SourceTag(str, Enum):
-    """Trust level tags for input sources."""
-
-    USER_DIRECT = "USER_DIRECT"
-    USER_INDIRECT = "USER_INDIRECT"
-    CONTENT_READ = "CONTENT_READ"
-    TOOL_RESULT = "TOOL_RESULT"
-    SYSTEM = "SYSTEM"
 
 
 class Event(BaseModel):

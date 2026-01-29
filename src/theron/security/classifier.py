@@ -9,7 +9,7 @@ from enum import IntEnum
 from typing import Any, Optional
 
 from ..config import TheronConfig, get_config
-from ..patterns import TOOL_TIERS, get_tier_for_tool
+from ..patterns import TOOL_TIERS
 
 
 class RiskTier(IntEnum):
