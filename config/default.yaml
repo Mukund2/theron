@@ -1,0 +1,76 @@
+# Theron Configuration
+# Security layer for agentic AI systems
+
+#----------------------------------------------------------------------
+# PROXY SETTINGS
+#----------------------------------------------------------------------
+proxy:
+  listen_port: 8081
+
+  endpoints:
+    anthropic: "https://api.anthropic.com"
+    openai: "https://api.openai.com"
+
+  timeout: 120
+  passthrough_auth: true
+
+#----------------------------------------------------------------------
+# DETECTION SETTINGS
+#----------------------------------------------------------------------
+detection:
+  # Sensitivity: 1 (permissive) to 10 (strict)
+  sensitivity: 5
+
+  # Threat score threshold (0-100)
+  injection_threshold: 70
+
+  # Enable/disable detection categories
+  categories:
+    ignore_previous: true
+    role_injection: true
+    authority_claims: true
+    delimiter_attacks: true
+    exfiltration: true
+    dangerous_commands: true
+
+  # Custom patterns (regex)
+  custom_patterns: []
+
+#----------------------------------------------------------------------
+# ACTION CLASSIFICATION
+#----------------------------------------------------------------------
+classification:
+  unknown_tool_tier: 3
+
+  tool_overrides: {}
+
+#----------------------------------------------------------------------
+# GATING POLICY
+#----------------------------------------------------------------------
+gating:
+  whitelist: []
+  blacklist: []
+  overrides: {}
+
+#----------------------------------------------------------------------
+# DASHBOARD
+#----------------------------------------------------------------------
+dashboard:
+  enabled: true
+  port: 8080
+
+#----------------------------------------------------------------------
+# LOGGING
+#----------------------------------------------------------------------
+logging:
+  level: INFO
+  retention_days: 30
+  log_bodies: false
+
+#----------------------------------------------------------------------
+# LEARNING (v2)
+#----------------------------------------------------------------------
+learning:
+  enabled: false
+  baseline_days: 7
+  anomaly_sensitivity: 5

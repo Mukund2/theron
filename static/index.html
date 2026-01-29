@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theron - Security Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <h1>Theron</h1>
+                <span class="subtitle">Security Layer for Agentic AI</span>
+            </div>
+            <div class="status">
+                <span id="connection-status" class="status-indicator disconnected">
+                    <span class="dot"></span>
+                    <span class="text">Disconnected</span>
+                </span>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab active" data-tab="live">Live Feed</button>
+            <button class="tab" data-tab="stats">Statistics</button>
+            <button class="tab" data-tab="config">Configuration</button>
+        </nav>
+
+        <main>
+            <!-- Live Feed Panel -->
+            <section id="live-panel" class="panel active">
+                <div class="panel-header">
+                    <h2>Event Log</h2>
+                    <div class="filters">
+                        <select id="filter-action">
+                            <option value="">All Actions</option>
+                            <option value="allowed">Allowed</option>
+                            <option value="logged">Logged</option>
+                            <option value="blocked">Blocked</option>
+                        </select>
+                        <select id="filter-tier">
+                            <option value="">All Tiers</option>
+                            <option value="1">Tier 1 (Safe)</option>
+                            <option value="2">Tier 2 (Moderate)</option>
+                            <option value="3">Tier 3 (Sensitive)</option>
+                            <option value="4">Tier 4 (Critical)</option>
+                        </select>
+                        <button id="refresh-events" class="btn btn-secondary">Refresh</button>
+                    </div>
+                </div>
+                <div class="event-list" id="event-list">
+                    <div class="loading">Loading events...</div>
+                </div>
+            </section>
+
+            <!-- Statistics Panel -->
+            <section id="stats-panel" class="panel">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-total">-</div>
+                        <div class="stat-label">Total Requests</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-value" id="stat-blocked">-</div>
+                        <div class="stat-label">Blocked</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="stat-value" id="stat-injections">-</div>
+                        <div class="stat-label">Injections Detected</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-agents">-</div>
+                        <div class="stat-label">Unique Agents</div>
+                    </div>
+                </div>
+
+                <div class="chart-section">
+                    <h3>Daily Activity</h3>
+                    <div class="chart-container">
+                        <div id="daily-chart" class="chart"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Panel -->
+            <section id="config-panel" class="panel">
+                <div class="config-section">
+                    <h3>Detection Settings</h3>
+                    <div class="config-group">
+                        <label>
+                            <span>Sensitivity (1-10)</span>
+                            <input type="range" id="config-sensitivity" min="1" max="10" value="5">
+                            <span id="sensitivity-value">5</span>
+                        </label>
+                    </div>
+                    <div class="config-group">
+                        <label>
+                            <span>Injection Threshold (0-100)</span>
+                            <input type="number" id="config-threshold" min="0" max="100" value="70">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Detection Categories</h3>
+                    <div class="checkbox-grid" id="categories-grid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Gating</h3>
+                    <div class="config-group">
+                        <label>
+                            <span>Whitelist (comma-separated)</span>
+                            <textarea id="config-whitelist" rows="2" placeholder="get_weather, get_time"></textarea>
+                        </label>
+                    </div>
+                    <div class="config-group">
+                        <label>
+                            <span>Blacklist (comma-separated)</span>
+                            <textarea id="config-blacklist" rows="2" placeholder="format_disk"></textarea>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="config-actions">
+                    <button id="save-config" class="btn btn-primary">Save Configuration</button>
+                    <button id="reset-config" class="btn btn-secondary">Reset to Defaults</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Alert Toast -->
+        <div id="alert-toast" class="alert-toast hidden">
+            <div class="alert-icon"></div>
+            <div class="alert-content">
+                <div class="alert-title"></div>
+                <div class="alert-message"></div>
+            </div>
+            <button class="alert-close">&times;</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

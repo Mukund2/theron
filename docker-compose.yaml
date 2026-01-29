@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  theron:
+    build: .
+    container_name: theron
+    ports:
+      - "8080:8080"   # Dashboard
+      - "8081:8081"   # Proxy
+    volumes:
+      - theron-data:/root/.theron
+    environment:
+      - THERON_CONFIG_DIR=/root/.theron
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Run proxy and dashboard as separate services
+  # Uncomment below for production deployment
+
+  # theron-proxy:
+  #   build: .
+  #   container_name: theron-proxy
+  #   command: ["theron", "proxy", "--host", "0.0.0.0"]
+  #   ports:
+  #     - "8081:8081"
+  #   volumes:
+  #     - theron-data:/root/.theron
+  #   environment:
+  #     - THERON_CONFIG_DIR=/root/.theron
+  #   restart: unless-stopped
+
+  # theron-dashboard:
+  #   build: .
+  #   container_name: theron-dashboard
+  #   command: ["theron", "dashboard", "--host", "0.0.0.0"]
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - theron-data:/root/.theron
+  #   environment:
+  #     - THERON_CONFIG_DIR=/root/.theron
+  #   restart: unless-stopped
+
+volumes:
+  theron-data:
