@@ -96,6 +96,33 @@ class AnthropicHandler:
         # Get the dominant source tag (most untrusted in recent messages)
         dominant_source = get_dominant_source(tagged_messages)
 
+        # Block very high threat requests before sending to LLM
+        if max_threat_score >= 90 and dominant_source in (SourceTag.CONTENT_READ, SourceTag.TOOL_RESULT):
+            events.append(
+                EventCreate(
+                    request_id=request_id,
+                    agent_id=headers.get("x-theron-agent-id"),
+                    source_tag=dominant_source.value,
+                    threat_score=max_threat_score,
+                    injection_detected=injection_detected,
+                    injection_patterns=json.dumps(injection_patterns) if injection_patterns else None,
+                    action="blocked",
+                    block_reason=f"High threat score ({max_threat_score}) from untrusted source",
+                    llm_provider="anthropic",
+                    model=model,
+                )
+            )
+            # Return error response instead of forwarding
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"[Theron Security] Request blocked due to high threat score ({max_threat_score}). Potential prompt injection detected in {dominant_source.value} content.",
+                    }
+                ],
+                "stop_reason": "end_turn",
+            }, events
+
         # Optionally inject security context into system prompt
         if injection_detected or max_threat_score > 50:
             request_data = self._inject_security_context(request_data, tagged_messages)
@@ -147,6 +174,8 @@ class AnthropicHandler:
             response_data = self.gate.filter_response_anthropic(response_data, decisions)
         else:
             # Log the request even if no tool calls
+            # Use "logged" for elevated threat, "allowed" for normal
+            action = "logged" if max_threat_score > 50 or injection_detected else "allowed"
             events.append(
                 EventCreate(
                     request_id=request_id,
@@ -155,7 +184,7 @@ class AnthropicHandler:
                     threat_score=max_threat_score,
                     injection_detected=injection_detected,
                     injection_patterns=json.dumps(injection_patterns) if injection_patterns else None,
-                    action="allowed",
+                    action=action,
                     llm_provider="anthropic",
                     model=model,
                 )

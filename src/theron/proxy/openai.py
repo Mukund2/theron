@@ -98,6 +98,35 @@ class OpenAIHandler:
         # Get dominant source
         dominant_source = get_dominant_source(tagged_messages)
 
+        # Block very high threat requests before sending to LLM
+        if max_threat_score >= 90 and dominant_source in (SourceTag.CONTENT_READ, SourceTag.TOOL_RESULT):
+            events.append(
+                EventCreate(
+                    request_id=request_id,
+                    agent_id=headers.get("x-theron-agent-id"),
+                    source_tag=dominant_source.value,
+                    threat_score=max_threat_score,
+                    injection_detected=injection_detected,
+                    injection_patterns=json.dumps(injection_patterns) if injection_patterns else None,
+                    action="blocked",
+                    block_reason=f"High threat score ({max_threat_score}) from untrusted source",
+                    llm_provider="openai",
+                    model=model,
+                )
+            )
+            # Return error response instead of forwarding
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": f"[Theron Security] Request blocked due to high threat score ({max_threat_score}). Potential prompt injection detected in {dominant_source.value} content.",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+            }, events
+
         # Optionally inject security context
         if injection_detected or max_threat_score > 50:
             request_data = self._inject_security_context(
@@ -149,6 +178,8 @@ class OpenAIHandler:
         if decisions:
             response_data = self.gate.filter_response_openai(response_data, decisions)
         else:
+            # Use "logged" for elevated threat, "allowed" for normal
+            action = "logged" if max_threat_score > 50 or injection_detected else "allowed"
             events.append(
                 EventCreate(
                     request_id=request_id,
@@ -157,7 +188,7 @@ class OpenAIHandler:
                     threat_score=max_threat_score,
                     injection_detected=injection_detected,
                     injection_patterns=json.dumps(injection_patterns) if injection_patterns else None,
-                    action="allowed",
+                    action=action,
                     llm_provider="openai",
                     model=model,
                 )
