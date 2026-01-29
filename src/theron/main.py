@@ -133,6 +133,25 @@ def init_config(args: argparse.Namespace) -> None:
     print(f"Configuration file created at: {config_path}")
 
 
+def run_setup(args: argparse.Namespace) -> None:
+    """Set up Theron for automatic protection."""
+    from .setup import run_setup as _run_setup, get_status
+
+    if args.status:
+        status = get_status()
+        print("Theron Status")
+        print("=" * 40)
+        print(f"Shell: {status['shell']}")
+        print(f"Profile: {status['profile_path']}")
+        print(f"Environment variables: {'Configured' if status['env_vars_configured'] else 'Not configured'}")
+        print(f"Background service: {'Running' if status['service_running'] else 'Not running'}")
+        print(f"Platform: {status['platform']}")
+        return
+
+    success = _run_setup(uninstall=args.uninstall)
+    sys.exit(0 if success else 1)
+
+
 def install_agent(args: argparse.Namespace) -> None:
     """Install an AI agent with safety guidance."""
     from .agents import AgentInstaller
@@ -203,16 +222,15 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  theron                    # Run both proxy and dashboard
+  theron setup              # One-time setup (adds to shell, starts service)
+  theron setup --status     # Check if Theron is configured
+  theron setup --uninstall  # Remove Theron setup
+
+  theron                    # Run both proxy and dashboard (manual mode)
   theron proxy              # Run only the proxy server
   theron dashboard          # Run only the dashboard
-  theron init               # Create default configuration
 
-  theron agents             # List known AI agents
-  theron install moltbot    # Safely install an AI agent
-  theron run moltbot        # Run agent with Theron protection
-
-For more information, visit: https://github.com/your-org/theron
+For more information, visit: https://github.com/Mukund2/theron
         """,
     )
 
@@ -236,6 +254,22 @@ For more information, visit: https://github.com/your-org/theron
 
     # Init command
     init_parser = subparsers.add_parser("init", help="Initialize configuration")
+
+    # Setup command
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Set up Theron for automatic protection",
+    )
+    setup_parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Remove Theron setup",
+    )
+    setup_parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show current setup status",
+    )
 
     # Agents command - list known agents
     agents_parser = subparsers.add_parser("agents", help="List known AI agents")
@@ -299,6 +333,8 @@ For more information, visit: https://github.com/your-org/theron
         run_dashboard(args)
     elif args.command == "init":
         init_config(args)
+    elif args.command == "setup":
+        run_setup(args)
     elif args.command == "agents":
         list_agents(args)
     elif args.command == "install":

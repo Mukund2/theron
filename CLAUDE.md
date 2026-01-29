@@ -8,7 +8,7 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 
 ## Current Status: Production Ready
 
-**127 tests passing** across 6 test files covering all subsystems.
+**151 tests passing** across 7 test files covering all subsystems.
 
 ### What's Built
 
@@ -188,6 +188,7 @@ theron/
 │   ├── main.py              # CLI entry point
 │   ├── config.py            # Configuration management
 │   ├── patterns.py          # Detection patterns + tool tiers
+│   ├── setup.py             # One-time setup (shell + service)
 │   ├── proxy/
 │   │   ├── server.py        # FastAPI proxy app
 │   │   ├── anthropic.py     # Anthropic API handler
@@ -235,7 +236,8 @@ theron/
 │   ├── test_gating.py       # 18 tests
 │   ├── test_sandbox.py      # 16 tests
 │   ├── test_intelligence.py # 32 tests
-│   └── test_autonomy.py     # 35 tests
+│   ├── test_autonomy.py     # 35 tests
+│   └── test_setup.py        # 24 tests
 ├── config/default.yaml
 ├── Dockerfile
 ├── docker-compose.yaml
@@ -243,33 +245,50 @@ theron/
 └── README.md
 ```
 
+## Quick Start (For Users)
+
+```bash
+pip install theron
+theron setup
+# Restart terminal - done!
+```
+
+That's it. After setup:
+- Theron starts automatically when you log in
+- All AI agents are automatically protected
+- No configuration needed
+
 ## CLI Commands
 
 ```bash
-# Start proxy + dashboard
-theron
+# One-time setup (recommended)
+theron setup              # Configure shell + install background service
+theron setup --status     # Check if Theron is configured
+theron setup --uninstall  # Remove Theron setup
 
-# Run components separately
-theron proxy        # Just proxy on :8081
-theron dashboard    # Just dashboard on :8080
+# Manual mode (for advanced users)
+theron                    # Run proxy + dashboard manually
+theron proxy              # Just proxy on :8081
+theron dashboard          # Just dashboard on :8080
 
 # Configuration
-theron init         # Create default config
+theron init               # Create default config
 
 # Agent management
-theron agents                # List known agents
-theron install {agent}       # Guided installation with safety checks
-theron run {agent}           # Run agent with Theron protection
-theron new-agent {name}      # Create agent definition template
+theron agents             # List known agents
+theron install {agent}    # Guided installation with safety checks
+theron run {agent}        # Run agent with Theron protection
+theron new-agent {name}   # Create agent definition template
 ```
 
 ## How to Test
 
 ```bash
-# Run all tests (127 tests)
+# Run all tests (151 tests)
 pytest tests/ -v
 
 # Test specific modules
+pytest tests/test_setup.py -v
 pytest tests/test_intelligence.py -v
 pytest tests/test_autonomy.py -v
 
@@ -282,19 +301,20 @@ curl http://localhost:8080/api/sandbox/status
 
 ## User Integration
 
+**Recommended (automatic):**
 ```bash
-# Start Theron
-theron &
+pip install theron
+theron setup
+# Restart terminal
+# All AI agents now automatically protected
+```
 
-# Point agent at proxy
+**Manual mode (advanced):**
+```bash
+theron &  # Start proxy in background
 export ANTHROPIC_API_URL=http://localhost:8081
 export OPENAI_API_BASE=http://localhost:8081/v1
-
-# Run agent normally - it's now protected
 your-agent start
-
-# Or use the built-in runner
-theron run claude-code
 ```
 
 ## Policy Matrix

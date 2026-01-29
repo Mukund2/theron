@@ -36,55 +36,40 @@ AI agents (Claude Code, AutoGPT, Moltbot) can execute shell commands, send email
 
 ## Installation
 
-Theron runs **locally on your machine** as a proxy between your AI agent and the LLM API.
-
 ```bash
 pip install theron
+theron setup
 ```
 
-Or from source:
+Restart your terminal. **Done.** All your AI agents are now protected.
 
+## What Happens
+
+After `theron setup`:
+- Theron starts automatically when you log in
+- All AI agents that use Anthropic or OpenAI APIs are automatically routed through Theron
+- Dangerous actions from untrusted content are blocked
+- No configuration needed
+
+Just use your AI agents normally:
 ```bash
-git clone https://github.com/Mukund2/theron.git
-cd theron
-pip install -e .
+claude        # Protected
+moltbot       # Protected
+your-agent    # Protected
 ```
 
-## Usage
+## Manual Mode (Advanced)
+
+If you prefer not to use automatic setup:
 
 ```bash
-# Start Theron (proxy + dashboard)
-theron
-
-# Opens:
-#   Proxy:     http://localhost:8081
-#   Dashboard: http://localhost:8080
+theron                    # Start proxy + dashboard manually
 ```
 
-Point your AI agent at the proxy:
-
+Then set environment variables:
 ```bash
-# For Anthropic-based agents
 export ANTHROPIC_API_URL=http://localhost:8081
-
-# For OpenAI-based agents
 export OPENAI_API_BASE=http://localhost:8081/v1
-
-# Run your agent normally - it's now protected
-your-agent start
-```
-
-Or use the built-in runner:
-
-```bash
-# List known agents
-theron agents
-
-# Install with safety guidance
-theron install claude-code
-
-# Run with automatic protection
-theron run claude-code
 ```
 
 ## How It Works
@@ -132,21 +117,21 @@ Enhanced gating adds composite risk scoring from injection detection, honeypot t
 ## CLI Commands
 
 ```bash
-theron                    # Start proxy + dashboard
-theron proxy              # Just proxy on :8081
-theron dashboard          # Just dashboard on :8080
-theron init               # Create default config
+# Setup (one-time)
+theron setup              # Configure automatic protection
+theron setup --status     # Check setup status
+theron setup --uninstall  # Remove setup
 
-theron agents             # List known agents
-theron install <agent>    # Guided installation
-theron run <agent>        # Run with protection
-theron new-agent <name>   # Create agent definition
+# Manual mode
+theron                    # Start proxy + dashboard
+theron proxy              # Just proxy
+theron dashboard          # Just dashboard
 ```
 
 ## Testing
 
 ```bash
-pytest tests/ -v    # 127 tests
+pytest tests/ -v    # 151 tests
 ```
 
 ## Configuration
