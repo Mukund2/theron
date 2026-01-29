@@ -697,8 +697,13 @@ def run_setup(uninstall: bool = False) -> bool:
     print("Theron will start automatically when you log in.")
     print("Your AI agents are now protected.")
     print()
-    print("Dashboard: http://localhost:8080")
+    print("-" * 40)
+    print("SECURITY DASHBOARD")
     print()
+    print("  View events and blocked actions at:")
+    print("  --> http://localhost:8080 <--")
+    print()
+    print("-" * 40)
 
     return True
 

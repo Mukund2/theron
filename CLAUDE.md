@@ -411,9 +411,48 @@ When a dangerous action (Tier 3/4) comes from untrusted content:
 
 ## Security Hardening
 
-The setup module implements multiple layers of security:
+Theron implements defense-in-depth with multiple layers of security:
 
-**File System Security**
+### HTTP Security (`src/theron/security/middleware.py`)
+
+**Security Headers** (all responses)
+- `X-Content-Type-Options: nosniff` - Prevent MIME sniffing
+- `X-Frame-Options: DENY` - Prevent clickjacking
+- `X-XSS-Protection: 1; mode=block` - XSS filter
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Cache-Control: no-store` - Prevent caching of sensitive data
+- `Permissions-Policy` - Disable geolocation, microphone, camera
+
+**Content Security Policy** (dashboard)
+- Strict CSP with `script-src 'self' 'unsafe-inline'`
+- Frame ancestors blocked
+- Base-uri and form-action restricted
+
+**Rate Limiting**
+- 100 requests/minute for dashboard API
+- 200 requests/minute for proxy API
+- Per-IP tracking with automatic cleanup
+
+**Request Validation**
+- Max request size: 1MB (dashboard), 10MB (proxy)
+- Content-Type validation for POST/PUT
+- Host header validation (localhost only - DNS rebinding protection)
+
+**CORS Restrictions**
+- Only localhost origins allowed
+- Credentials disabled
+- Explicit method allowlist
+
+### Frontend Security (static/app.js)
+
+**XSS Prevention**
+- All external data escaped via `escapeHtml()`
+- CSS class names sanitized to alphanumeric only
+- Data attributes validated before insertion
+- Numeric values parsed and validated
+
+### File System Security
+
 - All config files set to 600 permissions (owner read/write only)
 - All directories set to 700 permissions (owner access only)
 - Atomic file writes using temp files to prevent corruption
@@ -421,7 +460,8 @@ The setup module implements multiple layers of security:
 - Symlink detection to prevent redirection attacks
 - Path validation to prevent traversal attacks
 
-**Systemd Service Hardening** (Linux)
+### Systemd Service Hardening (Linux)
+
 - `PrivateTmp=yes` - Isolated /tmp directory
 - `ProtectSystem=strict` - Read-only system directories
 - `ProtectHome=read-only` - Restricted home access
@@ -432,10 +472,17 @@ The setup module implements multiple layers of security:
 - `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` - Limit network access
 - `MemoryMax=512M` / `CPUQuota=50%` - Resource limits
 
-**macOS Launch Agent Hardening**
+### macOS Launch Agent Hardening
+
 - Umask 077 for restrictive file creation
 - ThrottleInterval to prevent runaway restarts
 - Background process type
+
+### Error Handling
+
+- No stack traces or internal details leaked to clients
+- Generic error messages for all exceptions
+- Detailed logging server-side only
 
 ## Future Ideas
 

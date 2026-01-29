@@ -1,15 +1,17 @@
 """Main proxy server for Theron."""
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 
 from ..config import TheronConfig, get_config
 from ..security import ActionClassifier, ActionGate, InjectionDetector, SourceTagger
+from ..security.middleware import add_security_middleware
 from ..storage import get_database
 from .anthropic import AnthropicHandler
 from .openai import OpenAIHandler
@@ -157,6 +159,16 @@ def create_proxy_app(config: TheronConfig | None = None) -> FastAPI:
         description="Security proxy for agentic AI systems",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None,  # Disable docs in production
+        redoc_url=None,
+    )
+
+    # Add security middleware (rate limit: 200/min for proxy, 10MB max request)
+    add_security_middleware(
+        app,
+        include_csp=False,
+        rate_limit=200,
+        max_request_size=10 * 1024 * 1024,
     )
 
     @app.get("/health")
@@ -167,13 +179,39 @@ def create_proxy_app(config: TheronConfig | None = None) -> FastAPI:
     @app.post("/v1/messages")
     async def messages_endpoint(request: Request):
         """Anthropic Messages API endpoint."""
-        request_data = await request.json()
+        try:
+            request_data = await request.json()
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in request: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid JSON", "message": "Request body must be valid JSON"},
+            )
+        except Exception as e:
+            logger.error(f"Error parsing request: {type(e).__name__}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Bad Request", "message": "Could not parse request"},
+            )
         return await proxy.handle_messages(request, request_data)
 
     @app.post("/v1/chat/completions")
     async def chat_completions_endpoint(request: Request):
         """OpenAI Chat Completions API endpoint."""
-        request_data = await request.json()
+        try:
+            request_data = await request.json()
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in request: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid JSON", "message": "Request body must be valid JSON"},
+            )
+        except Exception as e:
+            logger.error(f"Error parsing request: {type(e).__name__}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Bad Request", "message": "Could not parse request"},
+            )
         return await proxy.handle_chat_completions(request, request_data)
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
@@ -183,14 +221,23 @@ def create_proxy_app(config: TheronConfig | None = None) -> FastAPI:
             try:
                 request_data = await request.json()
                 return await proxy.handle_generic(request, request_data)
-            except Exception:
-                pass
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON in catch-all request to /{path}")
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Invalid JSON", "message": "Request body must be valid JSON"},
+                )
+            except Exception as e:
+                logger.error(f"Error in catch-all handler: {type(e).__name__}")
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "Internal Error", "message": "An error occurred processing your request"},
+                )
 
-        # For non-POST or parse errors, return 404
-        return Response(
-            content='{"error": "Unknown endpoint"}',
+        # For non-POST, return 404
+        return JSONResponse(
             status_code=404,
-            media_type="application/json",
+            content={"error": "Not Found", "message": "Unknown endpoint"},
         )
 
     return app

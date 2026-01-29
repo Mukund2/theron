@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from ..config import TheronConfig, get_config, save_config
 from ..intelligence import get_intelligence_manager
 from ..sandbox import get_sandbox_manager
+from ..security.middleware import add_security_middleware
 from ..storage import get_database
 from ..storage.models import AlertFilter, EventFilter, SandboxFilter, SandboxResultCreate
 
@@ -82,6 +83,16 @@ def create_dashboard_app(config: TheronConfig | None = None) -> FastAPI:
         description="Security dashboard for agentic AI systems",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None,  # Disable docs in production
+        redoc_url=None,
+    )
+
+    # Add security middleware (rate limit: 100/min for dashboard, 1MB max request, include CSP)
+    add_security_middleware(
+        app,
+        include_csp=True,
+        rate_limit=100,
+        max_request_size=1 * 1024 * 1024,
     )
 
     # Serve static files if directory exists
@@ -180,9 +191,14 @@ def create_dashboard_app(config: TheronConfig | None = None) -> FastAPI:
 
             updated = TheronConfig(**updated_data)
             save_config(updated)
+            logger.info("Configuration updated successfully")
             return {"status": "success", "message": "Configuration updated"}
+        except ValueError as e:
+            logger.warning(f"Invalid configuration value: {e}")
+            raise HTTPException(status_code=400, detail="Invalid configuration values")
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error(f"Configuration update failed: {type(e).__name__}")
+            raise HTTPException(status_code=500, detail="Configuration update failed")
 
     @app.websocket("/api/events/stream")
     async def websocket_endpoint(websocket: WebSocket):

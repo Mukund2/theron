@@ -145,9 +145,11 @@ class TheronDashboard {
                 break;
             case 'sandbox_blocked':
                 this.addBlockedAction(data.data);
+                // Sanitize tool_name for alert message
+                const toolName = String(data.data?.tool_name || 'unknown').substring(0, 50);
                 this.showAlert({
                     level: 'warning',
-                    message: `Blocked dangerous action: ${data.data.tool_name}`,
+                    message: `Blocked dangerous action: ${toolName}`,
                 });
                 break;
         }
@@ -202,20 +204,25 @@ class TheronDashboard {
 
     renderEventItem(event) {
         const timestamp = new Date(event.timestamp).toLocaleTimeString();
-        const sourceTagClass = (event.source_tag || 'unknown').toLowerCase().replace('_', '-');
-        const riskTierClass = `tier-${event.risk_tier || 0}`;
-        const actionClass = (event.action || 'allowed').toLowerCase();
-        const threatScoreClass = (event.threat_score || 0) >= 70 ? 'high' : '';
+        // Sanitize class names to prevent injection
+        const sourceTag = String(event.source_tag || 'unknown');
+        const sourceTagClass = sourceTag.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+        const riskTier = parseInt(event.risk_tier) || 0;
+        const riskTierClass = `tier-${riskTier}`;
+        const action = String(event.action || 'allowed');
+        const actionClass = action.toLowerCase().replace(/[^a-z]/g, '');
+        const threatScore = parseInt(event.threat_score) || 0;
+        const threatScoreClass = threatScore >= 70 ? 'high' : '';
 
         return `
             <div class="event-item ${actionClass}">
-                <span class="timestamp">${timestamp}</span>
-                <span class="agent">${event.agent_id || 'unknown'}</span>
-                <span class="source-tag ${sourceTagClass}">${event.source_tag || 'N/A'}</span>
-                <span class="tool-name">${event.tool_name || '-'}</span>
-                <span class="risk-tier ${riskTierClass}">Tier ${event.risk_tier || '-'}</span>
-                <span class="action-badge ${actionClass}">${event.action || 'allowed'}</span>
-                <span class="threat-score ${threatScoreClass}">${event.threat_score || 0}</span>
+                <span class="timestamp">${this.escapeHtml(timestamp)}</span>
+                <span class="agent">${this.escapeHtml(String(event.agent_id || 'unknown'))}</span>
+                <span class="source-tag ${sourceTagClass}">${this.escapeHtml(sourceTag)}</span>
+                <span class="tool-name">${this.escapeHtml(String(event.tool_name || '-'))}</span>
+                <span class="risk-tier ${riskTierClass}">Tier ${riskTier || '-'}</span>
+                <span class="action-badge ${actionClass}">${this.escapeHtml(action)}</span>
+                <span class="threat-score ${threatScoreClass}">${threatScore}</span>
             </div>
         `;
     }
@@ -262,12 +269,15 @@ class TheronDashboard {
         const maxValue = Math.max(...daily.map(d => d.total_requests || 0), 1);
 
         chart.innerHTML = daily.slice(0, 7).reverse().map(day => {
-            const height = Math.max(((day.total_requests || 0) / maxValue) * 100, 5);
-            const date = new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' });
+            const totalRequests = parseInt(day.total_requests) || 0;
+            const height = Math.max((totalRequests / maxValue) * 100, 5);
+            const dateObj = new Date(day.date);
+            // Validate date is valid before formatting
+            const date = isNaN(dateObj.getTime()) ? 'N/A' : dateObj.toLocaleDateString('en-US', { weekday: 'short' });
             return `
                 <div class="chart-bar" style="height: ${height}%">
-                    <span class="chart-value">${day.total_requests || 0}</span>
-                    <span class="chart-label">${date}</span>
+                    <span class="chart-value">${totalRequests}</span>
+                    <span class="chart-label">${this.escapeHtml(date)}</span>
                 </div>
             `;
         }).join('');
@@ -310,12 +320,17 @@ class TheronDashboard {
         // Categories
         const categoriesGrid = document.getElementById('categories-grid');
         const categories = this.config.detection?.categories || {};
-        categoriesGrid.innerHTML = Object.entries(categories).map(([key, enabled]) => `
-            <div class="checkbox-item">
-                <input type="checkbox" id="cat-${key}" ${enabled ? 'checked' : ''}>
-                <label for="cat-${key}">${key.replace(/_/g, ' ')}</label>
-            </div>
-        `).join('');
+        categoriesGrid.innerHTML = Object.entries(categories).map(([key, enabled]) => {
+            // Sanitize key for safe use in id and label
+            const safeKey = String(key).replace(/[^a-z0-9_-]/gi, '');
+            const displayKey = safeKey.replace(/_/g, ' ');
+            return `
+                <div class="checkbox-item">
+                    <input type="checkbox" id="cat-${safeKey}" ${enabled ? 'checked' : ''}>
+                    <label for="cat-${safeKey}">${this.escapeHtml(displayKey)}</label>
+                </div>
+            `;
+        }).join('');
 
         // Gating
         document.getElementById('config-whitelist').value = (this.config.gating?.whitelist || []).join(', ');
@@ -383,10 +398,13 @@ class TheronDashboard {
     // Alerts
     showAlert(data) {
         const toast = document.getElementById('alert-toast');
-        toast.className = `alert-toast ${data.level || 'info'}`;
+        // Sanitize level to prevent class injection
+        const level = String(data.level || 'info').replace(/[^a-z]/g, '');
+        toast.className = `alert-toast ${level}`;
 
-        toast.querySelector('.alert-title').textContent = data.level === 'error' ? 'Error' : 'Alert';
-        toast.querySelector('.alert-message').textContent = data.message;
+        // Use textContent for safe text insertion (already safe, but being explicit)
+        toast.querySelector('.alert-title').textContent = level === 'error' ? 'Error' : 'Alert';
+        toast.querySelector('.alert-message').textContent = String(data.message || '');
 
         toast.classList.remove('hidden');
 
@@ -471,8 +489,15 @@ class TheronDashboard {
 
     renderBlockedCard(action) {
         const timestamp = new Date(action.created_at).toLocaleString();
-        const riskTierClass = `tier-${action.risk_tier || 3}`;
-        const riskTierLabel = action.risk_tier === 4 ? 'Critical' : 'Sensitive';
+        const riskTier = parseInt(action.risk_tier) || 3;
+        const riskTierClass = `tier-${riskTier}`;
+        const riskTierLabel = riskTier === 4 ? 'Critical' : 'Sensitive';
+        const threatScore = parseInt(action.threat_score) || 0;
+        const exitCode = action.exit_code !== null ? parseInt(action.exit_code) : null;
+        const durationMs = parseInt(action.duration_ms) || 0;
+
+        // Sanitize sandbox_id for data attribute (alphanumeric and hyphens only)
+        const sandboxId = String(action.sandbox_id || '').replace(/[^a-zA-Z0-9-]/g, '');
 
         // Format arguments
         let argsDisplay = '';
@@ -483,17 +508,17 @@ class TheronDashboard {
         }
 
         return `
-            <div class="blocked-card" data-id="${action.sandbox_id}">
+            <div class="blocked-card" data-id="${sandboxId}">
                 <div class="blocked-card-header">
                     <div class="tool-info">
-                        <span class="tool-name">${action.tool_name}</span>
-                        <span class="risk-badge ${riskTierClass}">Tier ${action.risk_tier} - ${riskTierLabel}</span>
+                        <span class="tool-name">${this.escapeHtml(String(action.tool_name || 'unknown'))}</span>
+                        <span class="risk-badge ${riskTierClass}">Tier ${riskTier} - ${riskTierLabel}</span>
                         <span class="blocked-badge">BLOCKED</span>
                     </div>
-                    <span class="timestamp">${timestamp}</span>
+                    <span class="timestamp">${this.escapeHtml(timestamp)}</span>
                 </div>
                 <div class="blocked-card-body">
-                    <div class="blocked-command">${this.escapeHtml(action.command)}</div>
+                    <div class="blocked-command">${this.escapeHtml(String(action.command || ''))}</div>
 
                     ${argsDisplay ? `
                     <div class="blocked-output">
@@ -505,33 +530,33 @@ class TheronDashboard {
                     ${action.stdout ? `
                     <div class="blocked-output">
                         <div class="blocked-output-label">Sandbox Output (would have produced)</div>
-                        <div class="blocked-output-content">${this.escapeHtml(action.stdout)}</div>
+                        <div class="blocked-output-content">${this.escapeHtml(String(action.stdout))}</div>
                     </div>
                     ` : ''}
 
                     ${action.stderr ? `
                     <div class="blocked-output">
                         <div class="blocked-output-label">Sandbox Errors</div>
-                        <div class="blocked-output-content stderr">${this.escapeHtml(action.stderr)}</div>
+                        <div class="blocked-output-content stderr">${this.escapeHtml(String(action.stderr))}</div>
                     </div>
                     ` : ''}
 
                     <div class="blocked-meta">
                         <div class="blocked-meta-item">
                             <span>Source:</span>
-                            <strong>${action.source_tag || 'Unknown'}</strong>
+                            <strong>${this.escapeHtml(String(action.source_tag || 'Unknown'))}</strong>
                         </div>
                         <div class="blocked-meta-item">
                             <span>Threat Score:</span>
-                            <strong>${action.threat_score || 0}</strong>
+                            <strong>${threatScore}</strong>
                         </div>
                         <div class="blocked-meta-item">
                             <span>Exit Code:</span>
-                            <strong>${action.exit_code !== null ? action.exit_code : 'N/A'}</strong>
+                            <strong>${exitCode !== null ? exitCode : 'N/A'}</strong>
                         </div>
                         <div class="blocked-meta-item">
                             <span>Duration:</span>
-                            <strong>${action.duration_ms || 0}ms</strong>
+                            <strong>${durationMs}ms</strong>
                         </div>
                     </div>
                 </div>
