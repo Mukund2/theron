@@ -23,18 +23,29 @@ AI agents (Claude Code, AutoGPT, Moltbot) can execute shell commands, send email
 - **Honeypot Injection** - Seed fake credentials, detect if agent uses them (indicates compromise)
 - **Taint Tracking** - Track which knowledge came from untrusted sources
 
-### Autonomous Agent Support
+### Learning & Autonomy
 - **Behavioral Baseline** - Learn normal patterns per agent, flag anomalies with zero config
 - **Task-Scoped Permissions** - Dynamically restrict tools based on inferred task (coding vs email)
 - **Shadow Execution** - Run actions in isolation, auto-commit/discard based on behavior analysis
 - **Graceful Degradation** - Automatically reduce agent autonomy when threats detected
+
+### Agent Management
+- **Agent Registry** - Modular agent definitions with risk levels and capabilities
+- **Guided Installation** - Safe onboarding with warnings and automatic Theron configuration
+- **Protected Runner** - Launch any agent with Theron protection via `theron run`
 
 ## Installation
 
 Theron runs **locally on your machine** as a proxy between your AI agent and the LLM API.
 
 ```bash
-git clone https://github.com/your-org/theron.git
+pip install theron
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/Mukund2/theron.git
 cd theron
 pip install -e .
 ```
@@ -63,30 +74,47 @@ export OPENAI_API_BASE=http://localhost:8081/v1
 your-agent start
 ```
 
+Or use the built-in runner:
+
+```bash
+# List known agents
+theron agents
+
+# Install with safety guidance
+theron install claude-code
+
+# Run with automatic protection
+theron run claude-code
+```
+
 ## How It Works
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                    YOUR COMPUTER                          │
-│                                                          │
-│  ┌─────────┐      ┌─────────┐      ┌─────────────────┐  │
-│  │   AI    │ ───▶ │ THERON  │ ───▶ │ api.anthropic.  │  │
-│  │  Agent  │ ◀─── │  Proxy  │ ◀─── │ com / openai    │  │
-│  └─────────┘      └─────────┘      └─────────────────┘  │
-│                        │                                 │
-│                   ┌────▼────┐                           │
-│                   │Dashboard│                           │
-│                   │ :8080   │                           │
-│                   └─────────┘                           │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         YOUR COMPUTER                            │
+│                                                                  │
+│  ┌─────────┐      ┌──────────────┐      ┌─────────────────────┐ │
+│  │   AI    │ ───▶ │    THERON    │ ───▶ │ api.anthropic.com   │ │
+│  │  Agent  │ ◀─── │    Proxy     │ ◀─── │ api.openai.com      │ │
+│  └─────────┘      └──────────────┘      └─────────────────────┘ │
+│                          │                                       │
+│         ┌────────────────┼────────────────┐                     │
+│         │                │                │                     │
+│    ┌────▼────┐    ┌──────▼──────┐   ┌─────▼─────┐              │
+│    │Dashboard│    │ Intelligence │   │  Sandbox  │              │
+│    │  :8080  │    │    Layer     │   │  (Docker) │              │
+│    └─────────┘    └─────────────┘   └───────────┘              │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 1. Agent sends request to `localhost:8081`
-2. Theron analyzes messages, tags trust levels, detects injection
+2. Theron tags messages with trust levels, detects injection attempts
 3. Request forwards to real LLM API
 4. Response analyzed - tool calls classified by risk
-5. Dangerous actions from untrusted content get blocked or sandboxed
-6. Dashboard shows real-time events and alerts
+5. Intelligence layer evaluates: causal chains, exfiltration, hijack, honeypots, taints
+6. Dangerous actions from untrusted content get sandboxed or blocked
+7. Behavioral baseline updated, anomalies flagged
+8. Dashboard shows real-time events and alerts
 
 ## Policy Matrix
 
@@ -95,9 +123,25 @@ Actions are allowed/blocked based on source trust × action risk:
 | Source ↓ / Risk → | Tier 1 (Safe) | Tier 2 (Moderate) | Tier 3 (Sensitive) | Tier 4 (Critical) |
 |-------------------|---------------|-------------------|--------------------|--------------------|
 | USER_DIRECT       | Allow         | Allow             | Allow              | Log                |
-| USER_INDIRECT     | Allow         | Allow             | Log                | Block              |
-| CONTENT_READ      | Allow         | Log               | Sandbox            | Block              |
-| TOOL_RESULT       | Allow         | Log               | Sandbox            | Block              |
+| USER_INDIRECT     | Allow         | Allow             | Log                | Sandbox            |
+| CONTENT_READ      | Allow         | Log               | Sandbox            | Sandbox            |
+| TOOL_RESULT       | Allow         | Log               | Sandbox            | Sandbox            |
+
+Enhanced gating adds composite risk scoring from injection detection, honeypot triggers, exfiltration attempts, intent drift, and behavioral anomalies.
+
+## CLI Commands
+
+```bash
+theron                    # Start proxy + dashboard
+theron proxy              # Just proxy on :8081
+theron dashboard          # Just dashboard on :8080
+theron init               # Create default config
+
+theron agents             # List known agents
+theron install <agent>    # Guided installation
+theron run <agent>        # Run with protection
+theron new-agent <name>   # Create agent definition
+```
 
 ## Testing
 
@@ -123,7 +167,39 @@ classification:
 gating:
   whitelist: [get_weather]
   blacklist: [format_disk]
+
+learning:
+  enabled: true
+  baseline_requests: 25    # Requests before baseline is established
 ```
+
+## Dashboard
+
+The web dashboard at `http://localhost:8080` provides:
+
+- **Events** - Real-time feed of all security events via WebSocket
+- **Pending Approvals** - Review and approve/reject sandboxed actions
+- **Intelligence** - Causal chains, alerts, honeypot stats, taint reports
+- **Profiles** - Per-agent behavioral baselines and anomalies
+- **Statistics** - Charts and summaries
+
+## API Reference
+
+### Proxy (port 8081)
+- `POST /v1/messages` - Anthropic API
+- `POST /v1/chat/completions` - OpenAI API
+- `GET /health` - Health check
+
+### Dashboard (port 8080)
+- `GET /api/events` - List events
+- `GET /api/sandbox/pending` - Pending approvals
+- `POST /api/sandbox/{id}/approve` - Approve sandboxed action
+- `POST /api/sandbox/{id}/reject` - Reject sandboxed action
+- `GET /api/intelligence/summary` - Intelligence overview
+- `GET /api/agents/{id}/profile` - Agent behavioral profile
+- `WS /api/events/stream` - Real-time event stream
+
+See [CLAUDE.md](CLAUDE.md) for full API reference.
 
 ## License
 
