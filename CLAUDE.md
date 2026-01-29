@@ -8,7 +8,7 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 
 ## Current Status: Production Ready
 
-**151 tests passing** across 7 test files covering all subsystems.
+**165 tests passing** across 7 test files covering all subsystems.
 
 ### What's Built
 
@@ -237,7 +237,7 @@ theron/
 │   ├── test_sandbox.py      # 16 tests
 │   ├── test_intelligence.py # 32 tests
 │   ├── test_autonomy.py     # 35 tests
-│   └── test_setup.py        # 24 tests
+│   └── test_setup.py        # 38 tests
 ├── config/default.yaml
 ├── Dockerfile
 ├── docker-compose.yaml
@@ -284,7 +284,7 @@ theron new-agent {name}   # Create agent definition template
 ## How to Test
 
 ```bash
-# Run all tests (151 tests)
+# Run all tests (165 tests)
 pytest tests/ -v
 
 # Test specific modules
@@ -408,6 +408,34 @@ When a dangerous action (Tier 3/4) comes from untrusted content:
 - Database: `~/.theron/theron.db`
 - Agent definitions: `~/.theron/agents/`
 - Default config template: `config/default.yaml`
+
+## Security Hardening
+
+The setup module implements multiple layers of security:
+
+**File System Security**
+- All config files set to 600 permissions (owner read/write only)
+- All directories set to 700 permissions (owner access only)
+- Atomic file writes using temp files to prevent corruption
+- Backup creation before modifying shell profiles
+- Symlink detection to prevent redirection attacks
+- Path validation to prevent traversal attacks
+
+**Systemd Service Hardening** (Linux)
+- `PrivateTmp=yes` - Isolated /tmp directory
+- `ProtectSystem=strict` - Read-only system directories
+- `ProtectHome=read-only` - Restricted home access
+- `NoNewPrivileges=yes` - Prevent privilege escalation
+- `ProtectKernelTunables=yes` - Prevent kernel parameter modification
+- `ProtectKernelModules=yes` - Prevent module loading
+- `MemoryDenyWriteExecute=yes` - Prevent code injection
+- `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` - Limit network access
+- `MemoryMax=512M` / `CPUQuota=50%` - Resource limits
+
+**macOS Launch Agent Hardening**
+- Umask 077 for restrictive file creation
+- ThrottleInterval to prevent runaway restarts
+- Background process type
 
 ## Future Ideas
 
