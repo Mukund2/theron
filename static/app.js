@@ -4,6 +4,7 @@ class TheronDashboard {
     constructor() {
         this.ws = null;
         this.events = [];
+        this.pendingSandbox = [];
         this.config = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
@@ -21,10 +22,15 @@ class TheronDashboard {
         // Initialize config controls
         this.initConfig();
 
+        // Initialize sandbox controls
+        this.initSandbox();
+
         // Load initial data
         this.loadEvents();
         this.loadStats();
         this.loadConfig();
+        this.loadPendingSandbox();
+        this.checkSandboxStatus();
 
         // Connect WebSocket
         this.connectWebSocket();
@@ -55,6 +61,8 @@ class TheronDashboard {
             this.loadStats();
         } else if (tabId === 'config') {
             this.loadConfig();
+        } else if (tabId === 'approvals') {
+            this.loadPendingSandbox();
         }
     }
 
@@ -134,6 +142,19 @@ class TheronDashboard {
                 break;
             case 'connected':
                 console.log('WebSocket:', data.message);
+                break;
+            case 'sandbox_pending':
+                this.addPendingSandbox(data.data);
+                this.showAlert({
+                    level: 'warning',
+                    message: `New action pending approval: ${data.data.tool_name}`,
+                });
+                break;
+            case 'sandbox_approved':
+                this.removePendingSandbox(data.data.sandbox_id);
+                break;
+            case 'sandbox_rejected':
+                this.removePendingSandbox(data.data.sandbox_id);
                 break;
         }
     }
@@ -384,6 +405,243 @@ class TheronDashboard {
         toast.querySelector('.alert-close').onclick = () => {
             toast.classList.add('hidden');
         };
+    }
+
+    // Sandbox Management
+    initSandbox() {
+        document.getElementById('refresh-approvals').addEventListener('click', () => {
+            this.loadPendingSandbox();
+        });
+    }
+
+    async checkSandboxStatus() {
+        try {
+            const response = await fetch('/api/sandbox/status');
+            const data = await response.json();
+            this.updateDockerStatus(data.docker_available);
+        } catch (error) {
+            console.error('Failed to check sandbox status:', error);
+            this.updateDockerStatus(false);
+        }
+    }
+
+    updateDockerStatus(available) {
+        const status = document.getElementById('docker-status');
+        if (available) {
+            status.classList.add('connected');
+            status.classList.remove('disconnected');
+            status.querySelector('.text').textContent = 'Docker Available';
+        } else {
+            status.classList.remove('connected');
+            status.classList.add('disconnected');
+            status.querySelector('.text').textContent = 'Docker Unavailable';
+        }
+    }
+
+    async loadPendingSandbox() {
+        try {
+            const response = await fetch('/api/sandbox/pending');
+            const data = await response.json();
+            this.pendingSandbox = data.results || [];
+            this.renderPendingSandbox();
+            this.updatePendingCount();
+        } catch (error) {
+            console.error('Failed to load pending sandbox:', error);
+            this.renderSandboxError();
+        }
+    }
+
+    addPendingSandbox(sandbox) {
+        this.pendingSandbox.unshift(sandbox);
+        this.renderPendingSandbox();
+        this.updatePendingCount();
+    }
+
+    removePendingSandbox(sandboxId) {
+        this.pendingSandbox = this.pendingSandbox.filter(s => s.sandbox_id !== sandboxId);
+        this.renderPendingSandbox();
+        this.updatePendingCount();
+    }
+
+    updatePendingCount() {
+        const badge = document.getElementById('pending-count');
+        const count = this.pendingSandbox.length;
+        badge.textContent = count;
+        if (count > 0) {
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    }
+
+    renderPendingSandbox() {
+        const container = document.getElementById('approvals-list');
+
+        if (this.pendingSandbox.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <h3>No pending approvals</h3>
+                    <p>When sensitive actions from untrusted sources are detected, they will be sandboxed and shown here for your approval.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.pendingSandbox.map(sandbox => this.renderSandboxCard(sandbox)).join('');
+
+        // Attach event listeners
+        container.querySelectorAll('.btn-approve').forEach(btn => {
+            btn.addEventListener('click', () => this.approveSandbox(btn.dataset.id));
+        });
+        container.querySelectorAll('.btn-reject').forEach(btn => {
+            btn.addEventListener('click', () => this.rejectSandbox(btn.dataset.id));
+        });
+    }
+
+    renderSandboxCard(sandbox) {
+        const timestamp = new Date(sandbox.created_at).toLocaleString();
+        const riskTierClass = `tier-${sandbox.risk_tier || 3}`;
+        const riskTierLabel = sandbox.risk_tier === 4 ? 'Critical' : 'Sensitive';
+
+        // Format arguments
+        let argsDisplay = '';
+        if (sandbox.tool_arguments && typeof sandbox.tool_arguments === 'object') {
+            argsDisplay = JSON.stringify(sandbox.tool_arguments, null, 2);
+        } else if (sandbox.tool_arguments) {
+            argsDisplay = String(sandbox.tool_arguments);
+        }
+
+        return `
+            <div class="sandbox-card" data-id="${sandbox.sandbox_id}">
+                <div class="sandbox-card-header">
+                    <div class="tool-info">
+                        <span class="tool-name">${sandbox.tool_name}</span>
+                        <span class="risk-badge ${riskTierClass}">Tier ${sandbox.risk_tier} - ${riskTierLabel}</span>
+                    </div>
+                    <span class="timestamp">${timestamp}</span>
+                </div>
+                <div class="sandbox-card-body">
+                    <div class="sandbox-command">${this.escapeHtml(sandbox.command)}</div>
+
+                    ${argsDisplay ? `
+                    <div class="sandbox-output">
+                        <div class="sandbox-output-label">Arguments</div>
+                        <div class="sandbox-output-content">${this.escapeHtml(argsDisplay)}</div>
+                    </div>
+                    ` : ''}
+
+                    ${sandbox.stdout ? `
+                    <div class="sandbox-output">
+                        <div class="sandbox-output-label">Output (stdout)</div>
+                        <div class="sandbox-output-content">${this.escapeHtml(sandbox.stdout)}</div>
+                    </div>
+                    ` : ''}
+
+                    ${sandbox.stderr ? `
+                    <div class="sandbox-output">
+                        <div class="sandbox-output-label">Errors (stderr)</div>
+                        <div class="sandbox-output-content stderr">${this.escapeHtml(sandbox.stderr)}</div>
+                    </div>
+                    ` : ''}
+
+                    <div class="sandbox-meta">
+                        <div class="sandbox-meta-item">
+                            <span>Source:</span>
+                            <strong>${sandbox.source_tag || 'Unknown'}</strong>
+                        </div>
+                        <div class="sandbox-meta-item">
+                            <span>Threat Score:</span>
+                            <strong>${sandbox.threat_score || 0}</strong>
+                        </div>
+                        <div class="sandbox-meta-item">
+                            <span>Exit Code:</span>
+                            <strong>${sandbox.exit_code !== null ? sandbox.exit_code : 'N/A'}</strong>
+                        </div>
+                        <div class="sandbox-meta-item">
+                            <span>Duration:</span>
+                            <strong>${sandbox.duration_ms || 0}ms</strong>
+                        </div>
+                    </div>
+
+                    <div class="sandbox-actions">
+                        <button class="btn btn-reject" data-id="${sandbox.sandbox_id}">Reject</button>
+                        <button class="btn btn-approve" data-id="${sandbox.sandbox_id}">Approve & Execute</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async approveSandbox(sandboxId) {
+        try {
+            const response = await fetch(`/api/sandbox/${sandboxId}/approve`, {
+                method: 'POST',
+            });
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                this.showAlert({
+                    level: 'info',
+                    message: 'Action approved and will be executed',
+                });
+                this.removePendingSandbox(sandboxId);
+            } else {
+                this.showAlert({
+                    level: 'error',
+                    message: result.detail || 'Failed to approve action',
+                });
+            }
+        } catch (error) {
+            console.error('Failed to approve sandbox:', error);
+            this.showAlert({
+                level: 'error',
+                message: 'Failed to approve action',
+            });
+        }
+    }
+
+    async rejectSandbox(sandboxId) {
+        try {
+            const response = await fetch(`/api/sandbox/${sandboxId}/reject`, {
+                method: 'POST',
+            });
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                this.showAlert({
+                    level: 'info',
+                    message: 'Action rejected',
+                });
+                this.removePendingSandbox(sandboxId);
+            } else {
+                this.showAlert({
+                    level: 'error',
+                    message: result.detail || 'Failed to reject action',
+                });
+            }
+        } catch (error) {
+            console.error('Failed to reject sandbox:', error);
+            this.showAlert({
+                level: 'error',
+                message: 'Failed to reject action',
+            });
+        }
+    }
+
+    renderSandboxError() {
+        const container = document.getElementById('approvals-list');
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>Failed to load approvals</h3>
+                <p>Please check that the Theron server is running.</p>
+            </div>
+        `;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 

@@ -63,24 +63,26 @@ class TestPolicyMatrix:
         )
         assert decision.action == GateAction.LOG
 
-    def test_content_read_blocks_sensitive(self, gate):
-        """Test CONTENT_READ blocks sensitive actions."""
+    def test_content_read_sandboxes_sensitive(self, gate):
+        """Test CONTENT_READ sandboxes sensitive actions."""
         decision = gate.evaluate(
             make_tool_call("execute_shell"),
             make_classification("execute_shell", RiskTier.SENSITIVE),
             SourceTag.CONTENT_READ,
         )
-        assert decision.action == GateAction.BLOCK
+        assert decision.action == GateAction.SANDBOX
         assert decision.block_message is not None
+        assert decision.sandbox_id is not None
 
-    def test_content_read_blocks_critical(self, gate):
-        """Test CONTENT_READ blocks critical actions."""
+    def test_content_read_sandboxes_critical(self, gate):
+        """Test CONTENT_READ sandboxes critical actions."""
         decision = gate.evaluate(
             make_tool_call("sudo_execute"),
             make_classification("sudo_execute", RiskTier.CRITICAL),
             SourceTag.CONTENT_READ,
         )
-        assert decision.action == GateAction.BLOCK
+        assert decision.action == GateAction.SANDBOX
+        assert decision.sandbox_id is not None
 
     def test_content_read_allows_safe(self, gate):
         """Test CONTENT_READ allows safe actions."""
@@ -100,14 +102,15 @@ class TestPolicyMatrix:
         )
         assert decision.action == GateAction.LOG
 
-    def test_tool_result_blocks_sensitive(self, gate):
-        """Test TOOL_RESULT blocks sensitive actions."""
+    def test_tool_result_sandboxes_sensitive(self, gate):
+        """Test TOOL_RESULT sandboxes sensitive actions."""
         decision = gate.evaluate(
             make_tool_call("run_script"),
             make_classification("run_script", RiskTier.SENSITIVE),
             SourceTag.TOOL_RESULT,
         )
-        assert decision.action == GateAction.BLOCK
+        assert decision.action == GateAction.SANDBOX
+        assert decision.sandbox_id is not None
 
 
 class TestThreatScoreGating:
@@ -182,10 +185,46 @@ class TestConfigOverrides:
 
 
 class TestResponseFiltering:
-    """Test response modification when blocking."""
+    """Test response modification when blocking/sandboxing."""
 
-    def test_filter_anthropic_response(self, gate):
+    def test_filter_anthropic_response_sandbox(self, gate):
+        """Test filtering sandboxed tool calls from Anthropic response."""
+        response = {
+            "content": [
+                {"type": "text", "text": "I'll help you."},
+                {
+                    "type": "tool_use",
+                    "id": "sandboxed_id",
+                    "name": "execute_shell",
+                    "input": {"command": "rm -rf /"},
+                },
+            ],
+            "stop_reason": "tool_use",
+        }
+
+        decision = gate.evaluate(
+            ToolCall(name="execute_shell", arguments={}, call_id="sandboxed_id"),
+            make_classification("execute_shell", RiskTier.SENSITIVE),
+            SourceTag.CONTENT_READ,
+        )
+
+        # Should be SANDBOX action
+        assert decision.action == GateAction.SANDBOX
+
+        filtered = gate.filter_response_anthropic(response, [decision])
+
+        # Tool call should be replaced with sandbox message
+        assert len(filtered["content"]) == 2
+        assert filtered["content"][1]["type"] == "text"
+        assert "Theron Security" in filtered["content"][1]["text"]
+        assert "sandbox" in filtered["content"][1]["text"].lower()
+        assert filtered["stop_reason"] == "end_turn"
+
+    def test_filter_anthropic_response_block(self, gate):
         """Test filtering blocked tool calls from Anthropic response."""
+        # Use blacklist to force a BLOCK instead of SANDBOX
+        gate.config.gating.blacklist = ["execute_shell"]
+
         response = {
             "content": [
                 {"type": "text", "text": "I'll help you."},
@@ -204,6 +243,9 @@ class TestResponseFiltering:
             make_classification("execute_shell", RiskTier.SENSITIVE),
             SourceTag.CONTENT_READ,
         )
+
+        # Should be BLOCK action due to blacklist
+        assert decision.action == GateAction.BLOCK
 
         filtered = gate.filter_response_anthropic(response, [decision])
 
@@ -238,7 +280,43 @@ class TestResponseFiltering:
 
         filtered = gate.filter_response_anthropic(response, decisions)
 
-        # First tool should still be there
+        # First tool should still be there, second should be sandboxed
         tool_uses = [c for c in filtered["content"] if c.get("type") == "tool_use"]
         assert len(tool_uses) == 1
         assert tool_uses[0]["name"] == "get_weather"
+
+
+class TestSandboxAction:
+    """Test sandbox action behavior."""
+
+    def test_sandbox_generates_id(self, gate):
+        """Test that SANDBOX action generates a unique ID."""
+        decision = gate.evaluate(
+            make_tool_call("execute_shell"),
+            make_classification("execute_shell", RiskTier.SENSITIVE),
+            SourceTag.CONTENT_READ,
+        )
+
+        assert decision.action == GateAction.SANDBOX
+        assert decision.sandbox_id is not None
+        assert len(decision.sandbox_id) > 0
+
+    def test_sandbox_message_includes_id(self, gate):
+        """Test that sandbox message includes the sandbox ID."""
+        decision = gate.evaluate(
+            make_tool_call("execute_shell"),
+            make_classification("execute_shell", RiskTier.SENSITIVE),
+            SourceTag.CONTENT_READ,
+        )
+
+        assert decision.sandbox_id in decision.block_message
+
+    def test_user_indirect_critical_sandboxes(self, gate):
+        """Test USER_INDIRECT with critical action gets sandboxed."""
+        decision = gate.evaluate(
+            make_tool_call("sudo_rm"),
+            make_classification("sudo_rm", RiskTier.CRITICAL),
+            SourceTag.USER_INDIRECT,
+        )
+
+        assert decision.action == GateAction.SANDBOX
