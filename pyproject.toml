@@ -20,7 +20,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
@@ -31,6 +30,10 @@ dependencies = [
     "pydantic>=2.5.0",
     "python-multipart>=0.0.6",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Mukund2/theron"
+Repository = "https://github.com/Mukund2/theron"
 
 [project.optional-dependencies]
 dev = [
