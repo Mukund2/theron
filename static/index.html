@@ -23,7 +23,7 @@
 
         <nav class="tabs">
             <button class="tab active" data-tab="live">Live Feed</button>
-            <button class="tab" data-tab="approvals">Approvals <span id="pending-count" class="badge hidden">0</span></button>
+            <button class="tab" data-tab="blocked">Blocked Actions</button>
             <button class="tab" data-tab="stats">Statistics</button>
             <button class="tab" data-tab="config">Configuration</button>
         </nav>
@@ -56,20 +56,21 @@
                 </div>
             </section>
 
-            <!-- Approvals Panel -->
-            <section id="approvals-panel" class="panel">
+            <!-- Blocked Actions Panel -->
+            <section id="blocked-panel" class="panel">
                 <div class="panel-header">
-                    <h2>Pending Approvals</h2>
+                    <h2>Blocked Actions</h2>
                     <div class="sandbox-status">
                         <span id="docker-status" class="status-indicator">
                             <span class="dot"></span>
                             <span class="text">Checking Docker...</span>
                         </span>
-                        <button id="refresh-approvals" class="btn btn-secondary">Refresh</button>
+                        <button id="refresh-blocked" class="btn btn-secondary">Refresh</button>
                     </div>
                 </div>
-                <div class="approvals-list" id="approvals-list">
-                    <div class="loading">Loading pending approvals...</div>
+                <p class="panel-description">Dangerous actions from untrusted sources are automatically blocked. These are shown here for your awareness.</p>
+                <div class="blocked-list" id="blocked-list">
+                    <div class="loading">Loading blocked actions...</div>
                 </div>
             </section>
 

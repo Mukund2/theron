@@ -178,10 +178,12 @@ learning:
 The web dashboard at `http://localhost:8080` provides:
 
 - **Events** - Real-time feed of all security events via WebSocket
-- **Pending Approvals** - Review and approve/reject sandboxed actions
+- **Blocked Actions** - Log of dangerous actions that were automatically blocked
 - **Intelligence** - Causal chains, alerts, honeypot stats, taint reports
 - **Profiles** - Per-agent behavioral baselines and anomalies
 - **Statistics** - Charts and summaries
+
+**Note:** Theron is fully automatic. Dangerous actions are blocked without requiring user approval - the dashboard is for visibility, not decision-making.
 
 ## API Reference
 
@@ -192,9 +194,7 @@ The web dashboard at `http://localhost:8080` provides:
 
 ### Dashboard (port 8080)
 - `GET /api/events` - List events
-- `GET /api/sandbox/pending` - Pending approvals
-- `POST /api/sandbox/{id}/approve` - Approve sandboxed action
-- `POST /api/sandbox/{id}/reject` - Reject sandboxed action
+- `GET /api/sandbox/blocked` - Recently blocked actions
 - `GET /api/intelligence/summary` - Intelligence overview
 - `GET /api/agents/{id}/profile` - Agent behavioral profile
 - `WS /api/events/stream` - Real-time event stream

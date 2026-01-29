@@ -4,7 +4,7 @@ class TheronDashboard {
     constructor() {
         this.ws = null;
         this.events = [];
-        this.pendingSandbox = [];
+        this.blockedActions = [];
         this.config = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
@@ -29,7 +29,7 @@ class TheronDashboard {
         this.loadEvents();
         this.loadStats();
         this.loadConfig();
-        this.loadPendingSandbox();
+        this.loadBlockedActions();
         this.checkSandboxStatus();
 
         // Connect WebSocket
@@ -61,8 +61,8 @@ class TheronDashboard {
             this.loadStats();
         } else if (tabId === 'config') {
             this.loadConfig();
-        } else if (tabId === 'approvals') {
-            this.loadPendingSandbox();
+        } else if (tabId === 'blocked') {
+            this.loadBlockedActions();
         }
     }
 
@@ -143,18 +143,12 @@ class TheronDashboard {
             case 'connected':
                 console.log('WebSocket:', data.message);
                 break;
-            case 'sandbox_pending':
-                this.addPendingSandbox(data.data);
+            case 'sandbox_blocked':
+                this.addBlockedAction(data.data);
                 this.showAlert({
                     level: 'warning',
-                    message: `New action pending approval: ${data.data.tool_name}`,
+                    message: `Blocked dangerous action: ${data.data.tool_name}`,
                 });
-                break;
-            case 'sandbox_approved':
-                this.removePendingSandbox(data.data.sandbox_id);
-                break;
-            case 'sandbox_rejected':
-                this.removePendingSandbox(data.data.sandbox_id);
                 break;
         }
     }
@@ -407,10 +401,10 @@ class TheronDashboard {
         };
     }
 
-    // Sandbox Management
+    // Blocked Actions Management
     initSandbox() {
-        document.getElementById('refresh-approvals').addEventListener('click', () => {
-            this.loadPendingSandbox();
+        document.getElementById('refresh-blocked').addEventListener('click', () => {
+            this.loadBlockedActions();
         });
     }
 
@@ -438,201 +432,118 @@ class TheronDashboard {
         }
     }
 
-    async loadPendingSandbox() {
+    async loadBlockedActions() {
         try {
-            const response = await fetch('/api/sandbox/pending');
+            const response = await fetch('/api/sandbox/blocked');
             const data = await response.json();
-            this.pendingSandbox = data.results || [];
-            this.renderPendingSandbox();
-            this.updatePendingCount();
+            this.blockedActions = data.results || [];
+            this.renderBlockedActions();
         } catch (error) {
-            console.error('Failed to load pending sandbox:', error);
-            this.renderSandboxError();
+            console.error('Failed to load blocked actions:', error);
+            this.renderBlockedError();
         }
     }
 
-    addPendingSandbox(sandbox) {
-        this.pendingSandbox.unshift(sandbox);
-        this.renderPendingSandbox();
-        this.updatePendingCount();
-    }
-
-    removePendingSandbox(sandboxId) {
-        this.pendingSandbox = this.pendingSandbox.filter(s => s.sandbox_id !== sandboxId);
-        this.renderPendingSandbox();
-        this.updatePendingCount();
-    }
-
-    updatePendingCount() {
-        const badge = document.getElementById('pending-count');
-        const count = this.pendingSandbox.length;
-        badge.textContent = count;
-        if (count > 0) {
-            badge.classList.remove('hidden');
-        } else {
-            badge.classList.add('hidden');
+    addBlockedAction(action) {
+        this.blockedActions.unshift(action);
+        // Keep only last 50
+        if (this.blockedActions.length > 50) {
+            this.blockedActions.pop();
         }
+        this.renderBlockedActions();
     }
 
-    renderPendingSandbox() {
-        const container = document.getElementById('approvals-list');
+    renderBlockedActions() {
+        const container = document.getElementById('blocked-list');
 
-        if (this.pendingSandbox.length === 0) {
+        if (this.blockedActions.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
-                    <h3>No pending approvals</h3>
-                    <p>When sensitive actions from untrusted sources are detected, they will be sandboxed and shown here for your approval.</p>
+                    <h3>No blocked actions</h3>
+                    <p>When dangerous actions from untrusted sources are detected, they are automatically blocked and shown here.</p>
                 </div>
             `;
             return;
         }
 
-        container.innerHTML = this.pendingSandbox.map(sandbox => this.renderSandboxCard(sandbox)).join('');
-
-        // Attach event listeners
-        container.querySelectorAll('.btn-approve').forEach(btn => {
-            btn.addEventListener('click', () => this.approveSandbox(btn.dataset.id));
-        });
-        container.querySelectorAll('.btn-reject').forEach(btn => {
-            btn.addEventListener('click', () => this.rejectSandbox(btn.dataset.id));
-        });
+        container.innerHTML = this.blockedActions.map(action => this.renderBlockedCard(action)).join('');
     }
 
-    renderSandboxCard(sandbox) {
-        const timestamp = new Date(sandbox.created_at).toLocaleString();
-        const riskTierClass = `tier-${sandbox.risk_tier || 3}`;
-        const riskTierLabel = sandbox.risk_tier === 4 ? 'Critical' : 'Sensitive';
+    renderBlockedCard(action) {
+        const timestamp = new Date(action.created_at).toLocaleString();
+        const riskTierClass = `tier-${action.risk_tier || 3}`;
+        const riskTierLabel = action.risk_tier === 4 ? 'Critical' : 'Sensitive';
 
         // Format arguments
         let argsDisplay = '';
-        if (sandbox.tool_arguments && typeof sandbox.tool_arguments === 'object') {
-            argsDisplay = JSON.stringify(sandbox.tool_arguments, null, 2);
-        } else if (sandbox.tool_arguments) {
-            argsDisplay = String(sandbox.tool_arguments);
+        if (action.tool_arguments && typeof action.tool_arguments === 'object') {
+            argsDisplay = JSON.stringify(action.tool_arguments, null, 2);
+        } else if (action.tool_arguments) {
+            argsDisplay = String(action.tool_arguments);
         }
 
         return `
-            <div class="sandbox-card" data-id="${sandbox.sandbox_id}">
-                <div class="sandbox-card-header">
+            <div class="blocked-card" data-id="${action.sandbox_id}">
+                <div class="blocked-card-header">
                     <div class="tool-info">
-                        <span class="tool-name">${sandbox.tool_name}</span>
-                        <span class="risk-badge ${riskTierClass}">Tier ${sandbox.risk_tier} - ${riskTierLabel}</span>
+                        <span class="tool-name">${action.tool_name}</span>
+                        <span class="risk-badge ${riskTierClass}">Tier ${action.risk_tier} - ${riskTierLabel}</span>
+                        <span class="blocked-badge">BLOCKED</span>
                     </div>
                     <span class="timestamp">${timestamp}</span>
                 </div>
-                <div class="sandbox-card-body">
-                    <div class="sandbox-command">${this.escapeHtml(sandbox.command)}</div>
+                <div class="blocked-card-body">
+                    <div class="blocked-command">${this.escapeHtml(action.command)}</div>
 
                     ${argsDisplay ? `
-                    <div class="sandbox-output">
-                        <div class="sandbox-output-label">Arguments</div>
-                        <div class="sandbox-output-content">${this.escapeHtml(argsDisplay)}</div>
+                    <div class="blocked-output">
+                        <div class="blocked-output-label">Arguments</div>
+                        <div class="blocked-output-content">${this.escapeHtml(argsDisplay)}</div>
                     </div>
                     ` : ''}
 
-                    ${sandbox.stdout ? `
-                    <div class="sandbox-output">
-                        <div class="sandbox-output-label">Output (stdout)</div>
-                        <div class="sandbox-output-content">${this.escapeHtml(sandbox.stdout)}</div>
+                    ${action.stdout ? `
+                    <div class="blocked-output">
+                        <div class="blocked-output-label">Sandbox Output (would have produced)</div>
+                        <div class="blocked-output-content">${this.escapeHtml(action.stdout)}</div>
                     </div>
                     ` : ''}
 
-                    ${sandbox.stderr ? `
-                    <div class="sandbox-output">
-                        <div class="sandbox-output-label">Errors (stderr)</div>
-                        <div class="sandbox-output-content stderr">${this.escapeHtml(sandbox.stderr)}</div>
+                    ${action.stderr ? `
+                    <div class="blocked-output">
+                        <div class="blocked-output-label">Sandbox Errors</div>
+                        <div class="blocked-output-content stderr">${this.escapeHtml(action.stderr)}</div>
                     </div>
                     ` : ''}
 
-                    <div class="sandbox-meta">
-                        <div class="sandbox-meta-item">
+                    <div class="blocked-meta">
+                        <div class="blocked-meta-item">
                             <span>Source:</span>
-                            <strong>${sandbox.source_tag || 'Unknown'}</strong>
+                            <strong>${action.source_tag || 'Unknown'}</strong>
                         </div>
-                        <div class="sandbox-meta-item">
+                        <div class="blocked-meta-item">
                             <span>Threat Score:</span>
-                            <strong>${sandbox.threat_score || 0}</strong>
+                            <strong>${action.threat_score || 0}</strong>
                         </div>
-                        <div class="sandbox-meta-item">
+                        <div class="blocked-meta-item">
                             <span>Exit Code:</span>
-                            <strong>${sandbox.exit_code !== null ? sandbox.exit_code : 'N/A'}</strong>
+                            <strong>${action.exit_code !== null ? action.exit_code : 'N/A'}</strong>
                         </div>
-                        <div class="sandbox-meta-item">
+                        <div class="blocked-meta-item">
                             <span>Duration:</span>
-                            <strong>${sandbox.duration_ms || 0}ms</strong>
+                            <strong>${action.duration_ms || 0}ms</strong>
                         </div>
-                    </div>
-
-                    <div class="sandbox-actions">
-                        <button class="btn btn-reject" data-id="${sandbox.sandbox_id}">Reject</button>
-                        <button class="btn btn-approve" data-id="${sandbox.sandbox_id}">Approve & Execute</button>
                     </div>
                 </div>
             </div>
         `;
     }
 
-    async approveSandbox(sandboxId) {
-        try {
-            const response = await fetch(`/api/sandbox/${sandboxId}/approve`, {
-                method: 'POST',
-            });
-            const result = await response.json();
-
-            if (result.status === 'success') {
-                this.showAlert({
-                    level: 'info',
-                    message: 'Action approved and will be executed',
-                });
-                this.removePendingSandbox(sandboxId);
-            } else {
-                this.showAlert({
-                    level: 'error',
-                    message: result.detail || 'Failed to approve action',
-                });
-            }
-        } catch (error) {
-            console.error('Failed to approve sandbox:', error);
-            this.showAlert({
-                level: 'error',
-                message: 'Failed to approve action',
-            });
-        }
-    }
-
-    async rejectSandbox(sandboxId) {
-        try {
-            const response = await fetch(`/api/sandbox/${sandboxId}/reject`, {
-                method: 'POST',
-            });
-            const result = await response.json();
-
-            if (result.status === 'success') {
-                this.showAlert({
-                    level: 'info',
-                    message: 'Action rejected',
-                });
-                this.removePendingSandbox(sandboxId);
-            } else {
-                this.showAlert({
-                    level: 'error',
-                    message: result.detail || 'Failed to reject action',
-                });
-            }
-        } catch (error) {
-            console.error('Failed to reject sandbox:', error);
-            this.showAlert({
-                level: 'error',
-                message: 'Failed to reject action',
-            });
-        }
-    }
-
-    renderSandboxError() {
-        const container = document.getElementById('approvals-list');
+    renderBlockedError() {
+        const container = document.getElementById('blocked-list');
         container.innerHTML = `
             <div class="empty-state">
-                <h3>Failed to load approvals</h3>
+                <h3>Failed to load blocked actions</h3>
                 <p>Please check that the Theron server is running.</p>
             </div>
         `;

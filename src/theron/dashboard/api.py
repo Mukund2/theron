@@ -60,9 +60,9 @@ async def broadcast_event(event: dict):
     await manager.broadcast({"type": "new_event", "data": event})
 
 
-async def broadcast_sandbox_pending(sandbox_data: dict):
-    """Broadcast a new pending sandbox result to dashboard clients."""
-    await manager.broadcast({"type": "sandbox_pending", "data": sandbox_data})
+async def broadcast_sandbox_blocked(sandbox_data: dict):
+    """Broadcast a blocked action that was sandboxed and auto-rejected."""
+    await manager.broadcast({"type": "sandbox_blocked", "data": sandbox_data})
 
 
 def create_dashboard_app(config: TheronConfig | None = None) -> FastAPI:
@@ -266,14 +266,25 @@ def create_dashboard_app(config: TheronConfig | None = None) -> FastAPI:
             }
 
     # Sandbox endpoints
-    @app.get("/api/sandbox/pending")
-    async def get_pending_sandbox():
-        """Get all pending sandbox results awaiting approval."""
+    @app.get("/api/sandbox/blocked")
+    async def get_blocked_sandbox():
+        """Get recently blocked actions that were sandboxed and auto-rejected."""
         db = await get_database()
-        results = await db.get_pending_sandbox_results()
+        # Get recently rejected sandbox results
+        filter = SandboxFilter(status="rejected", limit=50)
+        results = await db.get_sandbox_results(filter)
         return {
             "results": [_sandbox_result_to_dict(r) for r in results],
             "count": len(results),
+        }
+
+    @app.get("/api/sandbox/pending")
+    async def get_pending_sandbox():
+        """Legacy endpoint - returns empty since all actions are auto-rejected."""
+        return {
+            "results": [],
+            "count": 0,
+            "message": "Theron auto-rejects dangerous actions. See /api/sandbox/blocked for blocked actions.",
         }
 
     @app.get("/api/sandbox")
@@ -314,63 +325,19 @@ def create_dashboard_app(config: TheronConfig | None = None) -> FastAPI:
 
     @app.post("/api/sandbox/{sandbox_id}/approve")
     async def approve_sandbox(sandbox_id: str):
-        """Approve a sandbox result for real execution."""
-        db = await get_database()
-
-        # Check if result exists and is in completed status
-        result = await db.get_sandbox_result(sandbox_id)
-        if not result:
-            raise HTTPException(status_code=404, detail="Sandbox result not found")
-        if result.status != "completed":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot approve sandbox in status '{result.status}'"
-            )
-
-        # Update status
-        success = await db.update_sandbox_status(
-            sandbox_id, "approved", approved_at=datetime.utcnow()
+        """Manual approval is disabled - Theron auto-rejects dangerous actions."""
+        raise HTTPException(
+            status_code=400,
+            detail="Manual approval is disabled. Theron automatically blocks dangerous actions from untrusted sources."
         )
-
-        if success:
-            # Broadcast approval event
-            await manager.broadcast({
-                "type": "sandbox_approved",
-                "data": {"sandbox_id": sandbox_id},
-            })
-            return {"status": "success", "message": "Sandbox result approved"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to approve sandbox")
 
     @app.post("/api/sandbox/{sandbox_id}/reject")
     async def reject_sandbox(sandbox_id: str):
-        """Reject a sandbox result."""
-        db = await get_database()
-
-        # Check if result exists and is in completed status
-        result = await db.get_sandbox_result(sandbox_id)
-        if not result:
-            raise HTTPException(status_code=404, detail="Sandbox result not found")
-        if result.status != "completed":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot reject sandbox in status '{result.status}'"
-            )
-
-        # Update status
-        success = await db.update_sandbox_status(
-            sandbox_id, "rejected", rejected_at=datetime.utcnow()
+        """Manual rejection is not needed - Theron auto-rejects dangerous actions."""
+        raise HTTPException(
+            status_code=400,
+            detail="Manual rejection is not needed. Theron automatically blocks dangerous actions from untrusted sources."
         )
-
-        if success:
-            # Broadcast rejection event
-            await manager.broadcast({
-                "type": "sandbox_rejected",
-                "data": {"sandbox_id": sandbox_id},
-            })
-            return {"status": "success", "message": "Sandbox result rejected"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to reject sandbox")
 
     @app.get("/api/sandbox/status")
     async def get_sandbox_status():
@@ -379,11 +346,15 @@ def create_dashboard_app(config: TheronConfig | None = None) -> FastAPI:
         db = await get_database()
 
         docker_available = await sandbox_mgr.is_available()
-        pending = await db.get_pending_sandbox_results()
+
+        # Get count of recently blocked actions
+        filter = SandboxFilter(status="rejected", limit=100)
+        blocked = await db.get_sandbox_results(filter)
 
         return {
             "docker_available": docker_available,
-            "pending_count": len(pending),
+            "blocked_count": len(blocked),
+            "mode": "auto-reject",
         }
 
     # ============== Intelligence Endpoints ==============

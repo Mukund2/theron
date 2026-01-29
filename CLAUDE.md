@@ -167,7 +167,7 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 
 **Static UI** (`static/`)
 - Real-time event feed via WebSocket
-- Pending approvals tab
+- Blocked actions log (auto-rejected dangerous actions)
 - Statistics and charts
 - Industrial/cybersecurity aesthetic
 
@@ -325,10 +325,11 @@ When a dangerous action (Tier 3/4) comes from untrusted content:
    - Read-only filesystem + tmpfs
    - 256MB memory limit, 50% CPU
    - 30 second timeout
-4. **Stored** - Result saved to SQLite, broadcast to dashboard
-5. **User decides** - Review in "Pending Approvals" tab, click Approve or Reject
-6. **Learned** - Approval/rejection updates behavioral baseline
-7. **Response modified** - LLM response shows sandbox message instead of tool execution
+4. **Auto-rejected** - Action is automatically blocked (no user approval needed)
+5. **Logged** - Result saved to SQLite, shown in dashboard "Blocked Actions" tab
+6. **Response modified** - LLM response shows block message instead of tool execution
+
+**Design principle:** Theron is fully automatic. Non-technical users don't need to understand security decisions - dangerous actions are simply blocked.
 
 ## API Reference
 
@@ -352,12 +353,10 @@ When a dangerous action (Tier 3/4) comes from untrusted content:
 - `WS /api/events/stream` - Real-time WebSocket
 
 **Sandbox**
-- `GET /api/sandbox/pending` - List pending approvals
-- `GET /api/sandbox` - List all results
+- `GET /api/sandbox/blocked` - List recently blocked actions
+- `GET /api/sandbox` - List all sandbox results
 - `GET /api/sandbox/{id}` - Get specific result
-- `POST /api/sandbox/{id}/approve` - Approve
-- `POST /api/sandbox/{id}/reject` - Reject
-- `GET /api/sandbox/status` - Docker availability
+- `GET /api/sandbox/status` - Docker availability and stats
 
 **Intelligence**
 - `GET /api/intelligence/summary` - Overall summary

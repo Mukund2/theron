@@ -3,7 +3,7 @@
 import json
 from typing import Any, Optional
 
-from ..dashboard.api import broadcast_sandbox_pending
+from ..dashboard.api import broadcast_sandbox_blocked
 from ..sandbox import get_sandbox_manager
 from ..security.tagger import SourceTag
 from ..storage import get_database
@@ -104,6 +104,9 @@ async def execute_sandbox(
         request_id=request_id,
     )
 
+    # Auto-reject: dangerous actions are blocked automatically, no user approval needed
+    await sandbox_mgr.reject(result.sandbox_id)
+
     db = await get_database()
     await db.create_sandbox_result(
         SandboxResultCreate(
@@ -111,7 +114,7 @@ async def execute_sandbox(
             tool_name=result.tool_name,
             tool_arguments=result.tool_arguments,
             command=result.command,
-            status=result.status.value,
+            status="rejected",  # Always rejected - no user approval workflow
             exit_code=result.exit_code,
             stdout=result.stdout,
             stderr=result.stderr,
@@ -127,4 +130,4 @@ async def execute_sandbox(
         )
     )
 
-    await broadcast_sandbox_pending(result.to_dict())
+    await broadcast_sandbox_blocked(result.to_dict())
