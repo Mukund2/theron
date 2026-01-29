@@ -1,21 +1,35 @@
-"""Setup module for Theron - configures shell and background service."""
+"""Setup module for Theron - configures shell and background service.
+
+Security measures implemented:
+- Restrictive file permissions (600 for configs, 700 for directories)
+- Backup creation before modifying shell profiles
+- Atomic file writes using temp files
+- Path validation to prevent traversal attacks
+- Symlink detection to prevent redirection attacks
+- Input sanitization for paths
+- Systemd service hardening (PrivateTmp, ProtectSystem, etc.)
+"""
 
 import os
 import platform
+import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 
-# Shell profile paths
+# Shell profile paths (only allow these specific files)
 SHELL_PROFILES = {
     "zsh": [".zshrc", ".zshenv"],
     "bash": [".bashrc", ".bash_profile", ".profile"],
 }
 
-# Environment variables to add
+# Environment variables to add (hardcoded, not user-controllable)
 ENV_VARS = {
     "ANTHROPIC_API_URL": "http://localhost:8081",
     "OPENAI_API_BASE": "http://localhost:8081/v1",
@@ -23,6 +37,93 @@ ENV_VARS = {
 
 # Marker comment for our additions
 THERON_MARKER = "# Added by Theron - Security Layer for AI Agents"
+
+# Allowed characters in paths (security: prevent shell injection)
+SAFE_PATH_PATTERN = re.compile(r'^[a-zA-Z0-9/_.\-]+$')
+
+
+def _is_safe_path(path: Path) -> bool:
+    """Check if a path is safe (no special characters that could cause issues)."""
+    path_str = str(path)
+    # Allow typical path characters only
+    return bool(SAFE_PATH_PATTERN.match(path_str))
+
+
+def _validate_home_subpath(path: Path) -> bool:
+    """Validate that a path is within the user's home directory."""
+    try:
+        home = Path.home().resolve()
+        resolved = path.resolve()
+        return str(resolved).startswith(str(home))
+    except (OSError, ValueError):
+        return False
+
+
+def _check_not_symlink(path: Path) -> bool:
+    """Check that a path is not a symlink (prevent symlink attacks)."""
+    try:
+        return not path.is_symlink()
+    except OSError:
+        return False
+
+
+def _set_secure_permissions(path: Path, is_directory: bool = False) -> None:
+    """Set secure file permissions (owner read/write only)."""
+    try:
+        if is_directory:
+            # 700 for directories
+            os.chmod(path, stat.S_IRWXU)
+        else:
+            # 600 for files
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass  # Best effort
+
+
+def _atomic_write(path: Path, content: str) -> bool:
+    """Write content atomically using a temp file and rename."""
+    try:
+        # Create temp file in same directory for atomic rename
+        fd, temp_path = tempfile.mkstemp(
+            dir=path.parent,
+            prefix='.theron_tmp_',
+            suffix='.tmp'
+        )
+        try:
+            os.write(fd, content.encode('utf-8'))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+        # Set permissions before rename
+        os.chmod(temp_path, stat.S_IRUSR | stat.S_IWUSR)
+
+        # Atomic rename
+        os.rename(temp_path, path)
+        return True
+    except OSError:
+        # Clean up temp file on failure
+        try:
+            os.unlink(temp_path)
+        except (OSError, UnboundLocalError):
+            pass
+        return False
+
+
+def _create_backup(path: Path) -> Optional[Path]:
+    """Create a backup of a file before modifying it."""
+    if not path.exists():
+        return None
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = path.with_suffix(f".theron_backup_{timestamp}")
+
+    try:
+        shutil.copy2(path, backup_path)
+        _set_secure_permissions(backup_path)
+        return backup_path
+    except OSError:
+        return None
 
 
 def detect_shell() -> str:
@@ -46,10 +147,15 @@ def get_shell_profile_path(shell: str) -> Optional[Path]:
     # Check which profile exists
     for profile in profiles:
         profile_path = home / profile
+
+        # Security: validate path is safe
+        if not _validate_home_subpath(profile_path):
+            continue
+
         if profile_path.exists():
             return profile_path
 
-    # If none exist, create the first one
+    # If none exist, return the first one (will be created)
     return home / profiles[0]
 
 
@@ -58,22 +164,56 @@ def check_env_vars_configured(profile_path: Path) -> bool:
     if not profile_path.exists():
         return False
 
-    content = profile_path.read_text()
-    return THERON_MARKER in content
+    # Security: check path is in home directory
+    if not _validate_home_subpath(profile_path):
+        return False
+
+    try:
+        content = profile_path.read_text()
+        return THERON_MARKER in content
+    except OSError:
+        return False
 
 
 def add_env_vars_to_profile(profile_path: Path) -> bool:
-    """Add Theron environment variables to shell profile."""
+    """Add Theron environment variables to shell profile.
+
+    Security measures:
+    - Creates backup before modification
+    - Validates path is within home directory
+    - Uses atomic write operations
+    - Sets restrictive file permissions
+    """
+    # Security: validate path
+    if not _validate_home_subpath(profile_path):
+        print(f"  Security: Refusing to modify path outside home directory")
+        return False
+
+    # Security: check for symlink attacks
+    if profile_path.exists() and not _check_not_symlink(profile_path):
+        print(f"  Security: Refusing to modify symlink")
+        return False
+
     # Read existing content
     existing_content = ""
     if profile_path.exists():
-        existing_content = profile_path.read_text()
+        try:
+            existing_content = profile_path.read_text()
+        except OSError as e:
+            print(f"  Error reading profile: {e}")
+            return False
 
     # Check if already configured
     if THERON_MARKER in existing_content:
         return False  # Already configured
 
-    # Build the addition
+    # Create backup before modification
+    if profile_path.exists():
+        backup = _create_backup(profile_path)
+        if backup:
+            print(f"  Backup created: {backup}")
+
+    # Build the addition (hardcoded values, not user input)
     lines = [
         "",
         THERON_MARKER,
@@ -83,13 +223,21 @@ def add_env_vars_to_profile(profile_path: Path) -> bool:
         lines.append(f'export {var}="{value}"')
     lines.append("")
 
-    addition = "\n".join(lines)
+    new_content = existing_content + "\n".join(lines)
 
-    # Append to profile
-    with open(profile_path, "a") as f:
-        f.write(addition)
-
-    return True
+    # Atomic write with secure permissions
+    if _atomic_write(profile_path, new_content):
+        return True
+    else:
+        # Fallback to regular write
+        try:
+            with open(profile_path, "w") as f:
+                f.write(new_content)
+            _set_secure_permissions(profile_path)
+            return True
+        except OSError as e:
+            print(f"  Error writing profile: {e}")
+            return False
 
 
 def remove_env_vars_from_profile(profile_path: Path) -> bool:
@@ -97,10 +245,24 @@ def remove_env_vars_from_profile(profile_path: Path) -> bool:
     if not profile_path.exists():
         return False
 
-    content = profile_path.read_text()
+    # Security: validate path
+    if not _validate_home_subpath(profile_path):
+        return False
+
+    # Security: check for symlink attacks
+    if not _check_not_symlink(profile_path):
+        return False
+
+    try:
+        content = profile_path.read_text()
+    except OSError:
+        return False
 
     if THERON_MARKER not in content:
         return False  # Not configured
+
+    # Create backup before modification
+    _create_backup(profile_path)
 
     # Remove the Theron block
     lines = content.split("\n")
@@ -121,22 +283,38 @@ def remove_env_vars_from_profile(profile_path: Path) -> bool:
                 continue
         new_lines.append(line)
 
-    # Write back
-    with open(profile_path, "w") as f:
-        f.write("\n".join(new_lines))
+    # Atomic write
+    new_content = "\n".join(new_lines)
+    if not _atomic_write(profile_path, new_content):
+        # Fallback
+        try:
+            with open(profile_path, "w") as f:
+                f.write(new_content)
+        except OSError:
+            return False
 
     return True
 
 
 def get_theron_executable() -> str:
-    """Get the path to the theron executable."""
+    """Get the path to the theron executable.
+
+    Security: validates the executable path.
+    """
     # Try to find it in PATH
     theron_path = shutil.which("theron")
     if theron_path:
-        return theron_path
+        # Validate the path looks reasonable
+        if _is_safe_path(Path(theron_path)):
+            return theron_path
 
-    # Fall back to python -m theron
-    return f"{sys.executable} -m theron"
+    # Fall back to python -m theron (safer)
+    python_path = sys.executable
+    if _is_safe_path(Path(python_path)):
+        return f"{python_path} -m theron"
+
+    # Last resort
+    return "/usr/bin/python3 -m theron"
 
 
 def get_launchd_plist_path() -> Path:
@@ -145,9 +323,10 @@ def get_launchd_plist_path() -> Path:
 
 
 def get_launchd_plist_content() -> str:
-    """Generate macOS Launch Agent plist content."""
+    """Generate macOS Launch Agent plist content with security settings."""
     theron_exec = get_theron_executable()
     log_dir = Path.home() / ".theron" / "logs"
+    python_bin_dir = Path(sys.executable).parent
 
     # Handle both direct executable and python -m cases
     if " -m " in theron_exec:
@@ -162,6 +341,8 @@ def get_launchd_plist_content() -> str:
         <string>{theron_exec}</string>
     </array>"""
 
+    # Note: macOS Launch Agents have limited sandboxing options
+    # compared to systemd, but we set what we can
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -173,7 +354,10 @@ def get_launchd_plist_content() -> str:
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>StandardOutPath</key>
     <string>{log_dir}/theron.log</string>
     <key>StandardErrorPath</key>
@@ -183,8 +367,16 @@ def get_launchd_plist_content() -> str:
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:{Path(sys.executable).parent}</string>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:{python_bin_dir}</string>
     </dict>
+    <key>Umask</key>
+    <integer>63</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
 </dict>
 </plist>
 """
@@ -196,25 +388,59 @@ def get_systemd_service_path() -> Path:
 
 
 def get_systemd_service_content() -> str:
-    """Generate Linux systemd user service content."""
-    theron_exec = get_theron_executable()
+    """Generate Linux systemd user service content with security hardening.
 
-    # Handle both direct executable and python -m cases
-    if " -m " in theron_exec:
-        exec_start = theron_exec
-    else:
-        exec_start = theron_exec
+    Security features enabled:
+    - PrivateTmp: Isolate /tmp
+    - ProtectSystem: Make system directories read-only
+    - ProtectHome: Restrict home directory access (read-only)
+    - NoNewPrivileges: Prevent privilege escalation
+    - ProtectKernelTunables: Prevent kernel parameter modification
+    - ProtectControlGroups: Prevent cgroup modification
+    - RestrictRealtime: Prevent realtime scheduling
+    - RestrictSUIDSGID: Prevent SUID/SGID
+    """
+    theron_exec = get_theron_executable()
+    python_bin_dir = Path(sys.executable).parent
+    theron_data_dir = Path.home() / ".theron"
 
     return f"""[Unit]
 Description=Theron Security Proxy for AI Agents
 After=network.target
+Documentation=https://github.com/Mukund2/theron
 
 [Service]
 Type=simple
-ExecStart={exec_start}
-Restart=always
+ExecStart={theron_exec}
+Restart=on-failure
 RestartSec=5
-Environment="PATH=/usr/local/bin:/usr/bin:/bin:{Path(sys.executable).parent}"
+TimeoutStopSec=10
+
+# Environment
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:{python_bin_dir}"
+
+# Security Hardening
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={theron_data_dir}
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+ProtectHostname=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
 
 [Install]
 WantedBy=default.target
@@ -225,15 +451,27 @@ def install_macos_service() -> bool:
     """Install Theron as a macOS Launch Agent."""
     plist_path = get_launchd_plist_path()
 
-    # Create directory if needed
-    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    # Security: validate paths
+    if not _validate_home_subpath(plist_path):
+        return False
 
-    # Create log directory
+    # Create directory with secure permissions
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    _set_secure_permissions(plist_path.parent, is_directory=True)
+
+    # Create log directory with secure permissions
     log_dir = Path.home() / ".theron" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+    _set_secure_permissions(log_dir, is_directory=True)
 
-    # Write plist
-    plist_path.write_text(get_launchd_plist_content())
+    # Write plist with secure permissions
+    content = get_launchd_plist_content()
+    if not _atomic_write(plist_path, content):
+        try:
+            plist_path.write_text(content)
+            _set_secure_permissions(plist_path)
+        except OSError:
+            return False
 
     # Unload if already loaded (ignore errors)
     subprocess.run(
@@ -258,6 +496,10 @@ def uninstall_macos_service() -> bool:
     if not plist_path.exists():
         return False
 
+    # Security: validate path
+    if not _validate_home_subpath(plist_path):
+        return False
+
     # Unload the service
     subprocess.run(
         ["launchctl", "unload", str(plist_path)],
@@ -265,7 +507,10 @@ def uninstall_macos_service() -> bool:
     )
 
     # Remove the plist
-    plist_path.unlink()
+    try:
+        plist_path.unlink()
+    except OSError:
+        return False
 
     return True
 
@@ -274,11 +519,27 @@ def install_linux_service() -> bool:
     """Install Theron as a Linux systemd user service."""
     service_path = get_systemd_service_path()
 
-    # Create directory if needed
-    service_path.parent.mkdir(parents=True, exist_ok=True)
+    # Security: validate path
+    if not _validate_home_subpath(service_path):
+        return False
 
-    # Write service file
-    service_path.write_text(get_systemd_service_content())
+    # Create directory with secure permissions
+    service_path.parent.mkdir(parents=True, exist_ok=True)
+    _set_secure_permissions(service_path.parent, is_directory=True)
+
+    # Create data directory
+    data_dir = Path.home() / ".theron"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    _set_secure_permissions(data_dir, is_directory=True)
+
+    # Write service file with secure permissions
+    content = get_systemd_service_content()
+    if not _atomic_write(service_path, content):
+        try:
+            service_path.write_text(content)
+            _set_secure_permissions(service_path)
+        except OSError:
+            return False
 
     # Reload systemd
     subprocess.run(
@@ -308,6 +569,10 @@ def uninstall_linux_service() -> bool:
     if not service_path.exists():
         return False
 
+    # Security: validate path
+    if not _validate_home_subpath(service_path):
+        return False
+
     # Stop and disable
     subprocess.run(
         ["systemctl", "--user", "stop", "theron.service"],
@@ -319,7 +584,10 @@ def uninstall_linux_service() -> bool:
     )
 
     # Remove service file
-    service_path.unlink()
+    try:
+        service_path.unlink()
+    except OSError:
+        return False
 
     # Reload
     subprocess.run(
@@ -401,8 +669,10 @@ def run_setup(uninstall: bool = False) -> bool:
     if check_env_vars_configured(profile_path):
         print("Environment variables: Already configured")
     else:
-        add_env_vars_to_profile(profile_path)
-        print(f"Environment variables: Added to {profile_path}")
+        if add_env_vars_to_profile(profile_path):
+            print(f"Environment variables: Added to {profile_path}")
+        else:
+            print("Environment variables: Failed to add (check permissions)")
     print()
 
     # Step 3: Install background service

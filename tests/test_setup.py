@@ -19,6 +19,12 @@ from theron.setup import (
     get_status,
     THERON_MARKER,
     ENV_VARS,
+    _is_safe_path,
+    _validate_home_subpath,
+    _check_not_symlink,
+    _set_secure_permissions,
+    _atomic_write,
+    _create_backup,
 )
 
 
@@ -93,7 +99,8 @@ class TestEnvVarsConfiguration:
         profile = tmp_path / ".zshrc"
         profile.write_text(f"# Some content\n{THERON_MARKER}\nexport FOO=bar\n")
 
-        assert check_env_vars_configured(profile) is True
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            assert check_env_vars_configured(profile) is True
 
     def test_check_env_vars_nonexistent_file(self, tmp_path):
         """Test checking when profile doesn't exist."""
@@ -106,7 +113,8 @@ class TestEnvVarsConfiguration:
         profile = tmp_path / ".zshrc"
         profile.write_text("")
 
-        result = add_env_vars_to_profile(profile)
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            result = add_env_vars_to_profile(profile)
 
         assert result is True
         content = profile.read_text()
@@ -120,7 +128,8 @@ class TestEnvVarsConfiguration:
         existing = "# My existing config\nexport PATH=/usr/local/bin:$PATH\n"
         profile.write_text(existing)
 
-        result = add_env_vars_to_profile(profile)
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            result = add_env_vars_to_profile(profile)
 
         assert result is True
         content = profile.read_text()
@@ -132,8 +141,9 @@ class TestEnvVarsConfiguration:
         profile = tmp_path / ".zshrc"
         profile.write_text("")
 
-        add_env_vars_to_profile(profile)
-        result = add_env_vars_to_profile(profile)
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            add_env_vars_to_profile(profile)
+            result = add_env_vars_to_profile(profile)
 
         assert result is False  # Second call returns False
         content = profile.read_text()
@@ -147,7 +157,9 @@ class TestEnvVarsConfiguration:
         # The function appends, so we need to ensure the file exists first
         # This is intentional - we don't want to create profiles unexpectedly
         profile.touch()
-        result = add_env_vars_to_profile(profile)
+
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            result = add_env_vars_to_profile(profile)
 
         assert result is True
         assert profile.exists()
@@ -168,7 +180,8 @@ export BAZ=qux
 """
         profile.write_text(content)
 
-        result = remove_env_vars_from_profile(profile)
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            result = remove_env_vars_from_profile(profile)
 
         assert result is True
         new_content = profile.read_text()
@@ -231,7 +244,7 @@ class TestServiceContent:
 
         assert "theron.service" not in content  # Just checking it's service content
         assert "ExecStart" in content
-        assert "Restart=always" in content
+        assert "Restart=on-failure" in content  # Changed from always for security
         assert "theron" in content
 
 
@@ -276,9 +289,153 @@ class TestIntegration:
         profile = tmp_path / ".zshrc"
         profile.touch()
 
-        add_env_vars_to_profile(profile)
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            add_env_vars_to_profile(profile)
+
         content = profile.read_text()
 
         # Check format is correct for shell
         assert 'export ANTHROPIC_API_URL="http://localhost:8081"' in content
         assert 'export OPENAI_API_BASE="http://localhost:8081/v1"' in content
+
+
+class TestSecurityFunctions:
+    """Tests for security helper functions."""
+
+    def test_is_safe_path_valid(self):
+        """Test that valid paths are accepted."""
+        assert _is_safe_path(Path("/usr/local/bin/theron"))
+        assert _is_safe_path(Path("/home/user/.zshrc"))
+        assert _is_safe_path(Path("/Users/test/file.txt"))
+
+    def test_is_safe_path_invalid(self):
+        """Test that paths with special characters are rejected."""
+        assert not _is_safe_path(Path("/path/with spaces/file"))
+        assert not _is_safe_path(Path("/path/with;semicolon"))
+        assert not _is_safe_path(Path("/path/with$dollar"))
+        assert not _is_safe_path(Path("/path/with`backtick`"))
+
+    def test_validate_home_subpath_valid(self, tmp_path):
+        """Test that paths within home are accepted."""
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            assert _validate_home_subpath(tmp_path / "subdir" / "file")
+            assert _validate_home_subpath(tmp_path / ".config")
+
+    def test_validate_home_subpath_invalid(self, tmp_path):
+        """Test that paths outside home are rejected."""
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            assert not _validate_home_subpath(Path("/etc/passwd"))
+            assert not _validate_home_subpath(Path("/tmp/outside"))
+
+    def test_check_not_symlink_regular_file(self, tmp_path):
+        """Test that regular files pass symlink check."""
+        regular_file = tmp_path / "regular.txt"
+        regular_file.touch()
+        assert _check_not_symlink(regular_file)
+
+    def test_check_not_symlink_symlink(self, tmp_path):
+        """Test that symlinks fail symlink check."""
+        target = tmp_path / "target.txt"
+        target.touch()
+        symlink = tmp_path / "symlink.txt"
+        symlink.symlink_to(target)
+        assert not _check_not_symlink(symlink)
+
+    def test_set_secure_permissions_file(self, tmp_path):
+        """Test that files get 600 permissions."""
+        test_file = tmp_path / "secure.txt"
+        test_file.touch()
+        _set_secure_permissions(test_file)
+
+        mode = test_file.stat().st_mode
+        # Check owner read/write only (0o600)
+        assert mode & 0o777 == 0o600
+
+    def test_set_secure_permissions_directory(self, tmp_path):
+        """Test that directories get 700 permissions."""
+        test_dir = tmp_path / "secure_dir"
+        test_dir.mkdir()
+        _set_secure_permissions(test_dir, is_directory=True)
+
+        mode = test_dir.stat().st_mode
+        # Check owner rwx only (0o700)
+        assert mode & 0o777 == 0o700
+
+    def test_atomic_write(self, tmp_path):
+        """Test atomic file writing."""
+        test_file = tmp_path / "atomic.txt"
+        content = "test content"
+
+        result = _atomic_write(test_file, content)
+
+        assert result is True
+        assert test_file.read_text() == content
+        # Check permissions are secure
+        mode = test_file.stat().st_mode
+        assert mode & 0o777 == 0o600
+
+    def test_create_backup(self, tmp_path):
+        """Test backup creation."""
+        original = tmp_path / "original.txt"
+        original.write_text("original content")
+
+        backup_path = _create_backup(original)
+
+        assert backup_path is not None
+        assert backup_path.exists()
+        assert backup_path.read_text() == "original content"
+        assert ".theron_backup_" in backup_path.name
+
+    def test_refuses_symlink_modification(self, tmp_path):
+        """Test that symlink modification is refused."""
+        target = tmp_path / "target.txt"
+        target.write_text("target content")
+        symlink = tmp_path / ".zshrc"
+        symlink.symlink_to(target)
+
+        with patch("theron.setup.Path.home", return_value=tmp_path):
+            # This should refuse to modify the symlink
+            result = add_env_vars_to_profile(symlink)
+
+        # The function should return False for symlinks
+        assert result is False
+
+
+class TestSystemdHardening:
+    """Tests for systemd service security hardening."""
+
+    def test_systemd_has_security_directives(self):
+        """Test that systemd service includes security hardening."""
+        with patch("shutil.which", return_value="/usr/local/bin/theron"):
+            content = get_systemd_service_content()
+
+        # Check for key security directives
+        assert "PrivateTmp=yes" in content
+        assert "ProtectSystem=strict" in content
+        assert "NoNewPrivileges=yes" in content
+        assert "ProtectKernelTunables=yes" in content
+        assert "ProtectControlGroups=yes" in content
+        assert "MemoryDenyWriteExecute=yes" in content
+        assert "RestrictAddressFamilies=" in content
+
+    def test_systemd_has_resource_limits(self):
+        """Test that systemd service has resource limits."""
+        with patch("shutil.which", return_value="/usr/local/bin/theron"):
+            content = get_systemd_service_content()
+
+        assert "MemoryMax=" in content
+        assert "CPUQuota=" in content
+
+
+class TestLaunchdHardening:
+    """Tests for macOS Launch Agent security settings."""
+
+    def test_launchd_has_security_settings(self):
+        """Test that Launch Agent includes security settings."""
+        with patch("shutil.which", return_value="/usr/local/bin/theron"):
+            content = get_launchd_plist_content()
+
+        # Check for security-related settings
+        assert "Umask" in content
+        assert "ProcessType" in content
+        assert "ThrottleInterval" in content
