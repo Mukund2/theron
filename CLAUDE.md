@@ -57,7 +57,7 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 **Intelligence Manager** (`manager.py`)
 - Unified orchestrator for all intelligence modules
 - Per-request tracking and evaluation
-- Learns from user approvals/rejections
+- Learns from behavioral patterns over time
 
 **Causal Chain Tracking** (`causal.py`)
 - Visualizes attack lineage: "Email → Parse → Shell Command"
@@ -93,7 +93,7 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 **Behavioral Baseline** (`baseline.py`)
 - Per-agent behavioral profiles
 - Tracks: tool frequency, hourly patterns, average tools/request, risk tier distribution
-- Learns from sandbox approvals/rejections
+- Learns from observed patterns over time
 - Requires 25+ requests to build baseline (configurable)
 
 **Anomaly Scoring** (`anomaly.py`)
@@ -132,10 +132,10 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 - Automatic container cleanup
 
 **Sandbox Manager**
-- Execute, approve, reject workflow
-- Pending approval listing
-- Expiration cleanup (1 hour TTL)
+- Execute commands in isolated Docker containers
+- Auto-reject dangerous actions (no user approval needed)
 - Result storage in database
+- Expiration cleanup (1 hour TTL)
 
 #### 6. Agent Management (`src/theron/agents/`)
 
@@ -157,10 +157,10 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 
 #### 7. Dashboard (`src/theron/dashboard/`)
 
-**32 API Endpoints** (`api.py`)
+**30 API Endpoints** (`api.py`)
 - Configuration: GET/PUT /api/config
 - Events: GET /api/events, /api/stats, /api/summary, /export/events
-- Sandbox: /api/sandbox/*, approve, reject
+- Sandbox: /api/sandbox/blocked, /api/sandbox/status
 - Intelligence: /api/intelligence/summary, /causal, /alerts, /honeypots, /taints
 - Behavioral: /api/agents/{id}/profile, /anomalies, /profiles
 - WebSocket: /api/events/stream
