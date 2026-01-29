@@ -147,7 +147,13 @@ def list_agents():
         print(f"   {agent.description}")
         print(f"   Install: theron install {name_lower}")
         print(f"   Run:     theron run {name_lower}")
+        if agent.source != "builtin":
+            print(f"   Source:  {agent.source}")
 
     print("\n" + "-" * 60)
     print("Risk levels: 🟢 Low  🟡 Medium  🟠 High  🔴 Critical")
+    print()
+    print("Add custom agents:")
+    print("  theron new-agent <name>          # Create template")
+    print("  Edit ~/.theron/agents/<name>.yaml")
     print()

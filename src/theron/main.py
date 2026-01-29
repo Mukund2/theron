@@ -157,6 +157,45 @@ def list_agents(args: argparse.Namespace) -> None:
     _list_agents()
 
 
+def create_agent_definition(args: argparse.Namespace) -> None:
+    """Create a new agent definition template."""
+    from pathlib import Path
+    import yaml
+    from .agents.registry import create_agent_template
+
+    template = create_agent_template(args.name)
+
+    if args.user:
+        directory = Path.home() / ".theron" / "agents"
+    else:
+        directory = Path.cwd() / ".theron" / "agents"
+
+    directory.mkdir(parents=True, exist_ok=True)
+
+    filename = args.name.lower().replace(" ", "-") + ".yaml"
+    file_path = directory / filename
+
+    if file_path.exists() and not args.force:
+        print(f"❌ File already exists: {file_path}")
+        print("   Use --force to overwrite")
+        sys.exit(1)
+
+    with open(file_path, "w") as f:
+        yaml.dump(template, f, default_flow_style=False, sort_keys=False)
+
+    print(f"✓ Created agent template: {file_path}")
+    print()
+    print("Edit the file to customize:")
+    print("  - description: What does this agent do?")
+    print("  - risk_level: low, medium, high, or critical")
+    print("  - capabilities: What can it do?")
+    print("  - warnings: What should users know?")
+    print("  - install_commands: How to install it")
+    print("  - run_command: How to run it")
+    print()
+    print(f"Then use: theron install {args.name}")
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -224,6 +263,23 @@ For more information, visit: https://github.com/your-org/theron
         help="Additional arguments to pass to the agent",
     )
 
+    # New-agent command - create a new agent definition
+    new_agent_parser = subparsers.add_parser(
+        "new-agent",
+        help="Create a new agent definition template",
+    )
+    new_agent_parser.add_argument("name", help="Name of the new agent")
+    new_agent_parser.add_argument(
+        "--user",
+        action="store_true",
+        help="Create in user directory (~/.theron/agents/) instead of project",
+    )
+    new_agent_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing file",
+    )
+
     # Default (run all) uses these args
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--proxy-port", type=int, help="Proxy server port")
@@ -249,6 +305,8 @@ For more information, visit: https://github.com/your-org/theron
         install_agent(args)
     elif args.command == "run":
         run_agent(args)
+    elif args.command == "new-agent":
+        create_agent_definition(args)
     else:
         # Default: run both
         run_all(args)

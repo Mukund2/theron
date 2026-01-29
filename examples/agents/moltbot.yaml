@@ -1,0 +1,49 @@
+# Example agent definition for Moltbot
+# Copy this to ~/.theron/agents/ or .theron/agents/ to use
+
+name: Moltbot
+description: Fully autonomous AI agent that runs 24/7 without human supervision
+
+risk_level: critical  # low, medium, high, critical
+
+homepage: https://github.com/moltbot/moltbot
+
+install_methods:
+  - pip
+  - docker
+
+capabilities:
+  - Execute shell commands autonomously
+  - Send emails and messages
+  - Access the internet
+  - Run continuously without human approval
+  - Make decisions independently
+
+api_env_vars:
+  ANTHROPIC_API_URL: http://localhost:8081
+  OPENAI_API_BASE: http://localhost:8081/v1
+
+recommended_config:
+  detection:
+    sensitivity: 8
+    injection_threshold: 50
+  classification:
+    unknown_tool_tier: 4
+  gating:
+    blacklist:
+      - sudo
+      - rm -rf
+
+warnings:
+  - "⚠️  CRITICAL: Moltbot runs FULLY AUTONOMOUSLY"
+  - "It can take actions without asking for permission"
+  - "It runs 24/7 and makes independent decisions"
+  - "STRONGLY RECOMMENDED: Run in an isolated VM"
+  - "STRONGLY RECOMMENDED: Use network restrictions"
+  - "Do NOT give it access to production systems"
+
+install_commands:
+  pip: pip install moltbot
+  docker: docker pull moltbot/moltbot:latest
+
+run_command: moltbot start
