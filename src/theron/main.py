@@ -133,6 +133,30 @@ def init_config(args: argparse.Namespace) -> None:
     print(f"Configuration file created at: {config_path}")
 
 
+def install_agent(args: argparse.Namespace) -> None:
+    """Install an AI agent with safety guidance."""
+    from .agents import AgentInstaller
+
+    installer = AgentInstaller()
+    success = installer.install(args.agent, method=args.method)
+    sys.exit(0 if success else 1)
+
+
+def run_agent(args: argparse.Namespace) -> None:
+    """Run an AI agent with Theron protection."""
+    from .agents import AgentRunner
+
+    runner = AgentRunner()
+    exit_code = runner.run(args.agent, args=args.agent_args)
+    sys.exit(exit_code)
+
+
+def list_agents(args: argparse.Namespace) -> None:
+    """List known AI agents."""
+    from .agents.runner import list_agents as _list_agents
+    _list_agents()
+
+
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -144,6 +168,10 @@ Examples:
   theron proxy              # Run only the proxy server
   theron dashboard          # Run only the dashboard
   theron init               # Create default configuration
+
+  theron agents             # List known AI agents
+  theron install moltbot    # Safely install an AI agent
+  theron run moltbot        # Run agent with Theron protection
 
 For more information, visit: https://github.com/your-org/theron
         """,
@@ -170,6 +198,32 @@ For more information, visit: https://github.com/your-org/theron
     # Init command
     init_parser = subparsers.add_parser("init", help="Initialize configuration")
 
+    # Agents command - list known agents
+    agents_parser = subparsers.add_parser("agents", help="List known AI agents")
+
+    # Install command - guided agent installation
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Install an AI agent with safety guidance",
+    )
+    install_parser.add_argument("agent", help="Name of the agent to install")
+    install_parser.add_argument(
+        "--method",
+        help="Installation method (pip, npm, docker, etc.)",
+    )
+
+    # Run command - run agent with Theron protection
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run an AI agent with Theron protection",
+    )
+    run_parser.add_argument("agent", help="Name of the agent to run")
+    run_parser.add_argument(
+        "agent_args",
+        nargs="*",
+        help="Additional arguments to pass to the agent",
+    )
+
     # Default (run all) uses these args
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--proxy-port", type=int, help="Proxy server port")
@@ -189,6 +243,12 @@ For more information, visit: https://github.com/your-org/theron
         run_dashboard(args)
     elif args.command == "init":
         init_config(args)
+    elif args.command == "agents":
+        list_agents(args)
+    elif args.command == "install":
+        install_agent(args)
+    elif args.command == "run":
+        run_agent(args)
     else:
         # Default: run both
         run_all(args)
