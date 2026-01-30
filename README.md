@@ -1,12 +1,23 @@
 # Theron
 
-Security proxy for agentic AI systems. Detects prompt injection attacks and blocks dangerous actions automatically.
+Security proxy for agentic AI systems. Blocks prompt injection attacks automatically.
 
-## The Problem
+## Why Theron?
 
-AI agents can execute shell commands, send emails, and access files. When they process untrusted content (emails, web pages, documents), prompt injection attacks can hijack them into executing malicious commands.
+**Other tools scan for bad patterns. Theron enforces privilege separation.**
 
-**Theron's principle:** Content the AI reads should never have the same privilege level as commands the user issues.
+Most AI security tools try to detect "malicious" prompts with regex or ML. The problem? Attackers constantly find bypasses.
+
+Theron takes a different approach: **content your AI reads should never have the same privilege as commands you issue.** An email can't run shell commands - even if it contains valid-looking instructions.
+
+### What Makes It Different
+
+| Feature | Theron | Other Tools |
+|---------|--------|-------------|
+| **Source Trust Tagging** | Tags where content came from (user vs email vs web) and enforces different permissions | Treats all input the same |
+| **Zero Config** | `curl \| sh`, restart terminal, done. Works with Claude Code, Cursor, etc. | Requires SDK integration into your code |
+| **Local-First** | Runs entirely on your machine. No cloud, no data sent anywhere | Most are SaaS or require cloud components |
+| **Honeypot Detection** | Seeds fake credentials - if your agent uses them, it's compromised | Pattern matching only |
 
 ## Installation
 
@@ -31,7 +42,7 @@ theron setup
 ```
 </details>
 
-Restart your terminal. That's it - your AI agents are now protected.
+Restart your terminal. Your AI agents are now protected.
 
 ## How It Works
 
@@ -46,34 +57,47 @@ Restart your terminal. That's it - your AI agents are now protected.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-1. Your AI agent sends requests through Theron
-2. Theron analyzes messages for injection attacks
-3. Tool calls are classified by risk level
-4. Dangerous actions from untrusted content are blocked
-5. Safe requests pass through normally
+1. AI agent sends requests through Theron (automatic after setup)
+2. Theron tags each message with its source: `USER_DIRECT`, `CONTENT_READ`, `TOOL_RESULT`
+3. Tool calls are classified by risk: safe → moderate → sensitive → critical
+4. **Policy matrix decides**: user commands can run shell, but email content cannot
+5. Dangerous actions from untrusted sources are blocked automatically
 
-## What Gets Protected
+## The Core Idea: Source × Risk
 
-- **Prompt Injection Detection** - Detects instruction overrides, role injection, delimiter attacks
-- **Risk-Based Blocking** - Dangerous tools (shell, file delete, sudo) blocked when triggered by untrusted content
-- **Exfiltration Prevention** - Blocks sensitive data (credentials, keys) from leaking
-- **Behavioral Anomaly Detection** - Learns normal patterns, flags unusual activity
+| Content Source | Safe Tools | Sensitive Tools | Critical Tools |
+|----------------|------------|-----------------|----------------|
+| **You typed it** | Allow | Allow | Allow |
+| **From an email/webpage** | Allow | Block | Block |
+| **From tool output** | Allow | Block | Block |
+
+This is why Theron stops attacks that pattern-matching misses. The attacker's payload might look legitimate, but it came from untrusted content - so it can't execute dangerous actions.
+
+## Features
+
+- **Source Trust Tagging** - Every message tagged with origin and trust level
+- **Prompt Injection Detection** - 50+ patterns across 6 attack categories
+- **Risk-Based Gating** - 4-tier tool classification with 100+ tools mapped
+- **Honeypot Injection** - Fake credentials seeded in outputs to detect compromise
+- **Exfiltration Prevention** - Blocks sensitive data from leaking to external services
+- **Behavioral Baselines** - Learns normal patterns, detects anomalies
+- **Causal Chain Tracking** - Visualizes attack path: email → parse → shell command
 
 ## Dashboard
 
-View your protection status at `http://localhost:8080`:
+View protection status at `http://localhost:8080`:
 
-- Threats blocked count
-- Requests checked count
+- Threats blocked
+- Requests checked
 - Recently blocked actions
 
-## CLI Commands
+## CLI
 
 ```bash
 theron setup              # Configure automatic protection
 theron setup --status     # Check if protected
 theron setup --uninstall  # Remove protection
-theron                    # Start manually (if not using auto-setup)
+theron                    # Start manually
 ```
 
 ## Configuration
@@ -93,15 +117,9 @@ gating:
   blacklist: []            # Always block these tools
 ```
 
-## Security
+## Security Model
 
-Theron runs on localhost only. This is intentional:
-
-- **No authentication needed** - Only local processes can access it
-- **DNS rebinding protected** - Host header validation requires exact `localhost` match
-- **CORS restricted** - Only localhost origins allowed
-
-If you need remote access, use SSH tunneling or a reverse proxy with authentication.
+Theron runs on localhost only - no authentication needed because only local processes can access it. DNS rebinding and CORS attacks are blocked.
 
 ## License
 
