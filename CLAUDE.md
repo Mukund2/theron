@@ -258,12 +258,12 @@ theron/
 **One command. That's it.**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mukund2/theron/main/install.sh | sh
+curl -fsSL https://mukund2.github.io/theron/install.sh | sh
 ```
 
 For Windows (PowerShell):
 ```powershell
-irm https://raw.githubusercontent.com/Mukund2/theron/main/install.ps1 | iex
+irm https://mukund2.github.io/theron/install.ps1 | iex
 ```
 
 Manual installation (if you prefer):
