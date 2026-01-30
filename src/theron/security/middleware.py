@@ -256,12 +256,13 @@ def add_security_middleware(
         max_request_size: Maximum request body size in bytes
     """
     # Add CORS middleware (must be added before other middleware)
+    # SECURITY: Explicitly list allowed headers instead of wildcard
     app.add_middleware(
         CORSMiddleware,
         allow_origins=ALLOWED_ORIGINS,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
+        allow_headers=["content-type", "x-requested-with", "accept", "authorization"],
         max_age=3600,
     )
 

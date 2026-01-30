@@ -89,15 +89,15 @@ class EventCreate(BaseModel):
 class EventFilter(BaseModel):
     """Event filter parameters."""
 
-    agent_id: Optional[str] = None
-    action: Optional[str] = None
-    source_tag: Optional[str] = None
-    risk_tier: Optional[int] = None
+    agent_id: Optional[str] = Field(None, max_length=255)
+    action: Optional[str] = Field(None, max_length=50)
+    source_tag: Optional[str] = Field(None, max_length=100)
+    risk_tier: Optional[int] = Field(None, ge=1, le=4)
     injection_detected: Optional[bool] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    limit: int = 100
-    offset: int = 0
+    limit: int = Field(100, ge=1, le=1000)
+    offset: int = Field(0, ge=0)
 
 
 class SandboxResultDB(BaseModel):
@@ -151,11 +151,11 @@ class SandboxResultCreate(BaseModel):
 class SandboxFilter(BaseModel):
     """Filter for sandbox results."""
 
-    status: Optional[str] = None
-    agent_id: Optional[str] = None
-    tool_name: Optional[str] = None
-    limit: int = 50
-    offset: int = 0
+    status: Optional[str] = Field(None, max_length=50)
+    agent_id: Optional[str] = Field(None, max_length=255)
+    tool_name: Optional[str] = Field(None, max_length=255)
+    limit: int = Field(50, ge=1, le=1000)
+    offset: int = Field(0, ge=0)
 
 
 # ============== Intelligence Models ==============
@@ -253,13 +253,13 @@ class AlertCreate(BaseModel):
 class AlertFilter(BaseModel):
     """Filter for alerts."""
 
-    alert_type: Optional[str] = None
-    severity: Optional[str] = None
-    agent_id: Optional[str] = None
+    alert_type: Optional[str] = Field(None, max_length=50)
+    severity: Optional[str] = Field(None, max_length=20)
+    agent_id: Optional[str] = Field(None, max_length=255)
     acknowledged: Optional[bool] = None
     resolved: Optional[bool] = None
-    limit: int = 50
-    offset: int = 0
+    limit: int = Field(50, ge=1, le=1000)
+    offset: int = Field(0, ge=0)
 
 
 class HoneypotDB(BaseModel):

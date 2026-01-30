@@ -499,6 +499,32 @@ Theron implements defense-in-depth with multiple layers of security:
 - Generic error messages for all exceptions
 - Detailed logging server-side only
 
+### Input Validation
+
+- All filter parameters have `max_length` constraints to prevent memory exhaustion
+- Numeric bounds on `limit` (1-1000), `offset` (>=0), and `risk_tier` (1-4)
+- Pydantic validation rejects oversized inputs before processing
+
+### Security Model: Localhost-Only Deployment
+
+**Theron is designed exclusively for localhost deployment.** This is a deliberate security decision that simplifies the threat model:
+
+**Why no authentication?**
+- Host validation requires exact match on `localhost`/`127.0.0.1` (DNS rebinding protected)
+- CORS restricts origins to localhost only with credentials disabled
+- An attacker would need local code execution to access the API
+- At that point, they already have access to everything Theron protects
+
+**Assumptions:**
+- Users running `theron setup` are trusted administrators of their machine
+- The proxy and dashboard bind to localhost only
+- Remote access is not supported and should not be configured
+
+**If you need remote access:**
+- Do NOT expose Theron directly to the network
+- Use a reverse proxy (nginx, Caddy) with proper authentication
+- Consider SSH tunneling for remote administration
+
 ## Future Ideas
 
 - **Federated Threat Intelligence** - Share injection patterns across Theron instances

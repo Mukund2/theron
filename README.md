@@ -93,6 +93,16 @@ gating:
   blacklist: []            # Always block these tools
 ```
 
+## Security
+
+Theron runs on localhost only. This is intentional:
+
+- **No authentication needed** - Only local processes can access it
+- **DNS rebinding protected** - Host header validation requires exact `localhost` match
+- **CORS restricted** - Only localhost origins allowed
+
+If you need remote access, use SSH tunneling or a reverse proxy with authentication.
+
 ## License
 
 MIT
