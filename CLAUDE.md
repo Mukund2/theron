@@ -111,11 +111,11 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 - Task inference from conversation keywords
 - Decisions: ALLOW, WARN, DENY_SOFT, DENY_HARD
 
-**Graceful Degradation** (`degradation.py`)
-- 5 autonomy levels: FULL → CAUTIOUS → RESTRICTED → MINIMAL → SUSPENDED
+**Adaptive Filtering** (`degradation.py`)
+- 3 strictness levels: NORMAL → CAUTIOUS → RESTRICTED
 - Triggers: anomaly detection, policy violations, honeypot triggers, exfiltration attempts
-- Risk accumulation with thresholds
-- Auto-recovery with cooldown periods
+- All levels auto-recover - no manual intervention ever required
+- Per-action blocking in gating.py is the primary defense
 
 **Shadow Execution** (`shadow.py`)
 - "See what happens" security model

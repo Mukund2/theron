@@ -341,13 +341,13 @@ class TestShadowExecution:
 class TestGracefulDegradation:
     """Tests for graceful degradation."""
 
-    def test_initial_state_is_full(self):
-        """Test that initial state is full autonomy."""
+    def test_initial_state_is_normal(self):
+        """Test that initial state is normal filtering."""
         manager = DegradationManager()
 
         state = manager.get_state(agent_id="agent-1")
 
-        assert state.level == DegradationLevel.FULL
+        assert state.level == DegradationLevel.NORMAL
         assert state.accumulated_risk == 0.0
 
     def test_event_escalates_level(self):
@@ -382,39 +382,21 @@ class TestGracefulDegradation:
         assert state.level >= DegradationLevel.RESTRICTED
         assert state.accumulated_risk >= 0.5
 
-    def test_tool_blocked_at_minimal_level(self):
-        """Test that tools are blocked at minimal autonomy level."""
+    def test_tools_always_allowed(self):
+        """Test that tools are always allowed - per-action blocking is in gating.py."""
         manager = DegradationManager()
 
-        manager.force_level(DegradationLevel.MINIMAL, agent_id="agent-1")
+        manager.force_level(DegradationLevel.RESTRICTED, agent_id="agent-1")
 
-        # High-tier tool should be blocked
+        # All tools should be allowed - degradation only affects scrutiny level
         allowed, reason = manager.is_tool_allowed("execute_shell", risk_tier=3, agent_id="agent-1")
-        assert not allowed
+        assert allowed
 
-        # Read tool should be allowed
         allowed, reason = manager.is_tool_allowed("read_file", risk_tier=1, agent_id="agent-1")
         assert allowed
 
-    def test_write_blocked_in_read_only_mode(self):
-        """Test that write operations are blocked in read-only mode."""
-        manager = DegradationManager()
-
-        manager.force_level(DegradationLevel.MINIMAL, agent_id="agent-1")
-
         allowed, reason = manager.is_tool_allowed("write_file", risk_tier=2, agent_id="agent-1")
-        assert not allowed
-        assert "write" in reason.lower() or "read" in reason.lower()
-
-    def test_all_blocked_when_suspended(self):
-        """Test that all tools are blocked when suspended."""
-        manager = DegradationManager()
-
-        manager.force_level(DegradationLevel.SUSPENDED, agent_id="agent-1")
-
-        allowed, reason = manager.is_tool_allowed("read_file", risk_tier=1, agent_id="agent-1")
-        assert not allowed
-        assert "suspended" in reason.lower()
+        assert allowed
 
     def test_shadow_required_at_restricted_level(self):
         """Test that shadow execution is required at restricted level."""
@@ -444,31 +426,20 @@ class TestGracefulDegradation:
         # Should have reduced risk
         assert state.accumulated_risk < 0.25
 
-    def test_no_auto_recovery_from_suspended(self):
-        """Test that SUSPENDED requires manual intervention."""
+    def test_all_levels_auto_recover(self):
+        """Test that all levels auto-recover - no manual intervention needed."""
         manager = DegradationManager(enable_auto_recovery=True)
 
-        manager.force_level(DegradationLevel.SUSPENDED, agent_id="agent-1")
+        manager.force_level(DegradationLevel.RESTRICTED, agent_id="agent-1")
         state = manager.get_state(agent_id="agent-1")
         state.recovery_blocked_until = None
 
-        # Recovery should not work
+        # Recovery should work from any level
+        initial_risk = state.accumulated_risk
         recovered = manager.attempt_recovery(agent_id="agent-1")
 
-        assert not recovered
-        assert state.level == DegradationLevel.SUSPENDED
-
-    def test_resume_from_suspended(self):
-        """Test manual resume from suspended state."""
-        manager = DegradationManager()
-
-        manager.force_level(DegradationLevel.SUSPENDED, agent_id="agent-1")
-        manager.resume_from_suspended(agent_id="agent-1")
-
-        state = manager.get_state(agent_id="agent-1")
-
-        assert state.level == DegradationLevel.RESTRICTED
-        assert state.level != DegradationLevel.SUSPENDED
+        # Risk should decrease
+        assert state.accumulated_risk < initial_risk
 
     def test_status_summary(self):
         """Test getting status summary."""
@@ -577,9 +548,10 @@ class TestAutonomyIntegration:
         result1 = perm_manager.check_permission("req-1", "execute_shell")
         assert result1.decision == PermissionDecision.ALLOW
 
-        # Degrade to MINIMAL
-        deg_manager.force_level(DegradationLevel.MINIMAL, request_id="req-1")
+        # Degrade to RESTRICTED - increases scrutiny but doesn't block
+        deg_manager.force_level(DegradationLevel.RESTRICTED, request_id="req-1")
 
-        # Check degradation restrictions
+        # Tools are still allowed - degradation only affects scrutiny level
+        # Per-action blocking happens in gating.py based on source trust
         allowed, _ = deg_manager.is_tool_allowed("execute_shell", risk_tier=3, request_id="req-1")
-        assert not allowed  # Blocked at degraded level
+        assert allowed  # Allowed but would be sandboxed by gating.py

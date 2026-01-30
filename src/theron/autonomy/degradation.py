@@ -1,11 +1,13 @@
-"""Graceful degradation for autonomous agents.
+"""Adaptive filtering strictness for Theron proxy.
 
-Automatically reduces agent autonomy levels when security events are detected.
-This implements the AWS recommendation for agentic AI security without requiring
-human intervention.
+Automatically adjusts how strictly Theron filters requests when security events
+are detected. All levels auto-recover - no manual intervention ever required.
 
-Key insight: When things look suspicious, automatically restrict what the agent
-can do until the situation clarifies - better to be overly cautious than compromised.
+Key principles:
+1. Theron is a proxy - it can't control agents, only filter their requests
+2. Per-action blocking is the primary defense (in gating.py)
+3. This module adds *extra* scrutiny after suspicious activity
+4. User should never need to do anything - everything auto-recovers
 """
 
 from dataclasses import dataclass, field
@@ -16,13 +18,16 @@ from uuid import uuid4
 
 
 class DegradationLevel(IntEnum):
-    """Autonomy levels from full to minimal."""
+    """Filtering strictness levels.
 
-    FULL = 0          # Normal operation - all tools available
-    CAUTIOUS = 1      # Elevated logging, soft warnings
-    RESTRICTED = 2    # Tier 3-4 tools require shadow execution
-    MINIMAL = 3       # Only read operations allowed
-    SUSPENDED = 4     # No tool execution - agent effectively paused
+    Note: These control how strict Theron's filtering is, not the agent's autonomy.
+    Theron is a proxy - it can't control agents, only filter their requests.
+    All levels auto-recover over time. No manual intervention required.
+    """
+
+    NORMAL = 0        # Standard policy matrix applies
+    CAUTIOUS = 1      # Extra logging, lower thresholds for sandboxing
+    RESTRICTED = 2    # Sandbox all Tier 3-4 tools regardless of source
 
 
 @dataclass
@@ -63,16 +68,14 @@ class DegradationState:
 
 # Level thresholds based on accumulated risk
 LEVEL_THRESHOLDS = {
-    DegradationLevel.FULL: 0.0,
-    DegradationLevel.CAUTIOUS: 0.2,
-    DegradationLevel.RESTRICTED: 0.4,
-    DegradationLevel.MINIMAL: 0.7,
-    DegradationLevel.SUSPENDED: 0.9,
+    DegradationLevel.NORMAL: 0.0,
+    DegradationLevel.CAUTIOUS: 0.3,
+    DegradationLevel.RESTRICTED: 0.6,
 }
 
 # Tool restrictions per level
 LEVEL_RESTRICTIONS = {
-    DegradationLevel.FULL: {
+    DegradationLevel.NORMAL: {
         "allowed_tiers": [1, 2, 3, 4],
         "shadow_required": False,
         "logging_level": "normal",
@@ -81,25 +84,13 @@ LEVEL_RESTRICTIONS = {
         "allowed_tiers": [1, 2, 3, 4],
         "shadow_required": False,
         "logging_level": "verbose",
-        "warn_on_tier": 3,
+        "sandbox_threshold_reduction": 0.2,  # Lower threshold for sandboxing
     },
     DegradationLevel.RESTRICTED: {
         "allowed_tiers": [1, 2, 3, 4],
         "shadow_required_tiers": [3, 4],
         "logging_level": "verbose",
-    },
-    DegradationLevel.MINIMAL: {
-        "allowed_tiers": [1, 2],
-        "shadow_required": True,
-        "logging_level": "verbose",
-        "read_only": True,
-    },
-    DegradationLevel.SUSPENDED: {
-        "allowed_tiers": [],
-        "shadow_required": True,
-        "logging_level": "verbose",
-        "read_only": True,
-        "all_blocked": True,
+        "sandbox_all_tier_3_4": True,  # Sandbox all high-risk tools
     },
 }
 
@@ -126,11 +117,10 @@ EVENT_IMPACT = {
 }
 
 # Recovery rates (risk reduction per minute without incidents)
+# All levels auto-recover - no manual intervention ever required
 RECOVERY_RATES = {
-    DegradationLevel.CAUTIOUS: 0.02,     # ~10 min to recover from CAUTIOUS
-    DegradationLevel.RESTRICTED: 0.01,   # ~40 min to recover from RESTRICTED
-    DegradationLevel.MINIMAL: 0.005,     # ~80 min to recover from MINIMAL
-    DegradationLevel.SUSPENDED: 0.0,     # No auto-recovery from SUSPENDED
+    DegradationLevel.CAUTIOUS: 0.03,     # ~10 min to recover to NORMAL
+    DegradationLevel.RESTRICTED: 0.02,   # ~20 min to recover to CAUTIOUS
 }
 
 
@@ -158,7 +148,7 @@ class DegradationManager:
         self._states: dict[str, DegradationState] = {}
 
         # Global state (affects all agents)
-        self._global_level: DegradationLevel = DegradationLevel.FULL
+        self._global_level: DegradationLevel = DegradationLevel.NORMAL
         self._global_events: list[DegradationEvent] = []
 
     def get_state(self, agent_id: Optional[str] = None, request_id: Optional[str] = None) -> DegradationState:
@@ -170,7 +160,7 @@ class DegradationManager:
                 state_id=str(uuid4()),
                 agent_id=agent_id,
                 request_id=request_id,
-                level=DegradationLevel.FULL,
+                level=DegradationLevel.NORMAL,
                 level_changed_at=datetime.utcnow(),
             )
 
@@ -232,7 +222,7 @@ class DegradationManager:
         old_level = state.level
 
         # Find appropriate level
-        new_level = DegradationLevel.FULL
+        new_level = DegradationLevel.NORMAL
         for level in sorted(LEVEL_THRESHOLDS.keys(), key=lambda x: LEVEL_THRESHOLDS[x], reverse=True):
             if state.accumulated_risk >= LEVEL_THRESHOLDS[level]:
                 new_level = level
@@ -274,23 +264,16 @@ class DegradationManager:
         if state.recovery_blocked_until and datetime.utcnow() < state.recovery_blocked_until:
             return False
 
-        # Can't recover from SUSPENDED automatically
-        if state.level == DegradationLevel.SUSPENDED:
+        # Already at NORMAL - nothing to recover
+        if state.level == DegradationLevel.NORMAL:
             return False
 
-        # Can't recover if already at FULL
-        if state.level == DegradationLevel.FULL:
-            return False
-
-        # Apply recovery rate
-        recovery_rate = RECOVERY_RATES.get(state.level, 0.0)
-        if recovery_rate > 0:
-            state.accumulated_risk = max(0.0, state.accumulated_risk - recovery_rate)
-            old_level = state.level
-            self._update_level(state)
-            return state.level < old_level
-
-        return False
+        # Apply recovery rate - all levels auto-recover
+        recovery_rate = RECOVERY_RATES.get(state.level, 0.02)
+        state.accumulated_risk = max(0.0, state.accumulated_risk - recovery_rate)
+        old_level = state.level
+        self._update_level(state)
+        return state.level < old_level
 
     def get_restrictions(
         self,
@@ -311,7 +294,7 @@ class DegradationManager:
         # Combine agent/request state with global state
         effective_level = max(state.level, self._global_level)
 
-        return LEVEL_RESTRICTIONS.get(effective_level, LEVEL_RESTRICTIONS[DegradationLevel.FULL])
+        return LEVEL_RESTRICTIONS.get(effective_level, LEVEL_RESTRICTIONS[DegradationLevel.NORMAL])
 
     def is_tool_allowed(
         self,
@@ -320,7 +303,10 @@ class DegradationManager:
         agent_id: Optional[str] = None,
         request_id: Optional[str] = None,
     ) -> tuple[bool, str]:
-        """Check if a tool is allowed under current degradation level.
+        """Check if a tool is allowed under current filtering level.
+
+        Note: All tools are always allowed. This method now only returns
+        whether additional scrutiny (sandboxing) is recommended.
 
         Args:
             tool_name: Tool being called
@@ -329,25 +315,10 @@ class DegradationManager:
             request_id: Request identifier
 
         Returns:
-            Tuple of (is_allowed, reason)
+            Tuple of (is_allowed, reason) - always (True, ...) now
         """
-        restrictions = self.get_restrictions(agent_id, request_id)
-
-        # Check if all blocked
-        if restrictions.get("all_blocked"):
-            return False, "Agent is suspended - all tool execution blocked"
-
-        # Check allowed tiers
-        allowed_tiers = restrictions.get("allowed_tiers", [1, 2, 3, 4])
-        if risk_tier not in allowed_tiers:
-            return False, f"Tier {risk_tier} tools not allowed at current degradation level"
-
-        # Check read-only mode
-        if restrictions.get("read_only"):
-            write_tools = ["write", "create", "delete", "remove", "modify", "update", "insert", "drop"]
-            if any(w in tool_name.lower() for w in write_tools):
-                return False, "Write operations blocked in minimal autonomy mode"
-
+        # All tools are always allowed - we never fully block
+        # The per-action blocking in gating.py handles dangerous actions
         return True, "Tool allowed"
 
     def requires_shadow_execution(
@@ -411,28 +382,6 @@ class DegradationManager:
             impact_score=0.0,
         ))
 
-    def resume_from_suspended(
-        self,
-        agent_id: Optional[str] = None,
-        request_id: Optional[str] = None,
-    ) -> None:
-        """Resume an agent from SUSPENDED state.
-
-        This is the only way to recover from SUSPENDED.
-
-        Args:
-            agent_id: Agent identifier
-            request_id: Request identifier
-        """
-        state = self.get_state(agent_id, request_id)
-
-        if state.level == DegradationLevel.SUSPENDED:
-            # Reset to RESTRICTED (still cautious after suspension)
-            state.level = DegradationLevel.RESTRICTED
-            state.accumulated_risk = LEVEL_THRESHOLDS[DegradationLevel.RESTRICTED]
-            state.level_changed_at = datetime.utcnow()
-            state.recovery_blocked_until = datetime.utcnow() + timedelta(minutes=30)
-
     def get_status_summary(
         self,
         agent_id: Optional[str] = None,
@@ -461,10 +410,9 @@ class DegradationManager:
                 datetime.utcnow() < state.recovery_blocked_until
             ),
             "restrictions": {
-                "allowed_tiers": restrictions.get("allowed_tiers", []),
+                "allowed_tiers": restrictions.get("allowed_tiers", [1, 2, 3, 4]),
                 "shadow_required": restrictions.get("shadow_required", False),
-                "read_only": restrictions.get("read_only", False),
-                "all_blocked": restrictions.get("all_blocked", False),
+                "sandbox_tier_3_4": restrictions.get("sandbox_all_tier_3_4", False),
             },
             "recent_events": [
                 {
@@ -481,7 +429,7 @@ class DegradationManager:
         degraded = []
 
         for key, state in self._states.items():
-            if state.level > DegradationLevel.FULL:
+            if state.level > DegradationLevel.NORMAL:
                 degraded.append({
                     "agent_id": state.agent_id,
                     "request_id": state.request_id,
