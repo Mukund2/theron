@@ -8,6 +8,7 @@ Implements:
 - Content-Type validation
 """
 
+import threading
 import time
 from collections import defaultdict
 from typing import Callable
@@ -52,36 +53,43 @@ ALLOWED_ORIGINS = [
 
 
 class RateLimiter:
-    """Simple in-memory rate limiter."""
+    """Thread-safe in-memory rate limiter.
+
+    SECURITY: Uses lock to prevent race conditions in concurrent access.
+    """
 
     def __init__(self, requests_per_minute: int = 100):
         self.requests_per_minute = requests_per_minute
         self.requests: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
 
     def is_allowed(self, client_ip: str) -> bool:
-        """Check if request is allowed for this client."""
+        """Check if request is allowed for this client (thread-safe)."""
         now = time.time()
         minute_ago = now - 60
 
-        # Clean old entries
-        self.requests[client_ip] = [
-            t for t in self.requests[client_ip] if t > minute_ago
-        ]
+        with self._lock:
+            # Clean old entries
+            self.requests[client_ip] = [
+                t for t in self.requests[client_ip] if t > minute_ago
+            ]
 
-        # Check limit
-        if len(self.requests[client_ip]) >= self.requests_per_minute:
-            return False
+            # Check limit
+            if len(self.requests[client_ip]) >= self.requests_per_minute:
+                return False
 
-        # Record request
-        self.requests[client_ip].append(now)
-        return True
+            # Record request
+            self.requests[client_ip].append(now)
+            return True
 
     def get_remaining(self, client_ip: str) -> int:
-        """Get remaining requests for this client."""
+        """Get remaining requests for this client (thread-safe)."""
         now = time.time()
         minute_ago = now - 60
-        recent = [t for t in self.requests[client_ip] if t > minute_ago]
-        return max(0, self.requests_per_minute - len(recent))
+
+        with self._lock:
+            recent = [t for t in self.requests[client_ip] if t > minute_ago]
+            return max(0, self.requests_per_minute - len(recent))
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -199,22 +207,29 @@ class ContentTypeValidationMiddleware(BaseHTTPMiddleware):
 
 
 class HostValidationMiddleware(BaseHTTPMiddleware):
-    """Middleware to validate Host header (prevent DNS rebinding)."""
+    """Middleware to validate Host header (prevent DNS rebinding).
 
-    ALLOWED_HOSTS = [
+    SECURITY: Uses exact match to prevent bypass via subdomains like localhost.attacker.com
+    """
+
+    # Exact hosts allowed - no substring matching
+    ALLOWED_HOSTS = frozenset({
         "localhost",
         "127.0.0.1",
+        "[::1]",  # IPv6 localhost
         "localhost:8080",
         "localhost:8081",
         "127.0.0.1:8080",
         "127.0.0.1:8081",
-    ]
+        "[::1]:8080",
+        "[::1]:8081",
+    })
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        host = request.headers.get("host", "")
+        host = request.headers.get("host", "").lower().strip()
 
-        # Validate host
-        if host and not any(h in host for h in ["localhost", "127.0.0.1"]):
+        # SECURITY: Exact match only - prevents DNS rebinding attacks
+        if host and host not in self.ALLOWED_HOSTS:
             return JSONResponse(
                 status_code=400,
                 content={

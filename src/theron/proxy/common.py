@@ -1,6 +1,7 @@
 """Shared utilities for proxy handlers."""
 
 import json
+import shlex
 from typing import Any, Optional
 
 from ..dashboard.api import broadcast_sandbox_blocked
@@ -8,6 +9,15 @@ from ..sandbox import get_sandbox_manager
 from ..security.tagger import SourceTag
 from ..storage import get_database
 from ..storage.models import SandboxResultCreate
+
+
+def _safe_quote(value: Any) -> str:
+    """Safely quote a value for shell use. SECURITY: prevents command injection."""
+    s = str(value) if value is not None else ""
+    # Truncate very long values
+    if len(s) > 10000:
+        s = s[:10000]
+    return shlex.quote(s)
 
 
 def get_dominant_source(tagged_messages: list) -> SourceTag:
@@ -41,43 +51,49 @@ def get_dominant_source(tagged_messages: list) -> SourceTag:
 
 
 def build_command_from_tool(tool_call) -> str:
-    """Build a shell command from a tool call for sandbox execution."""
-    tool_name = tool_call.name
+    """Build a shell command from a tool call for sandbox execution.
+
+    SECURITY: All values are quoted with shlex.quote() to prevent command injection.
+    """
+    tool_name = str(tool_call.name) if tool_call.name else "unknown"
     args = tool_call.arguments or {}
 
-    # Shell execution tools
+    # Shell execution tools - quote the entire command
     if tool_name in ("execute_shell", "run_command", "bash", "shell"):
-        return args.get("command", args.get("cmd", str(args)))
+        cmd = args.get("command", args.get("cmd", ""))
+        # For shell commands, we echo what would run (don't actually execute user command)
+        return f"echo {_safe_quote(f'Would execute: {cmd}')}"
 
-    # File operations
+    # File operations - quote all paths and content
     if tool_name in ("write_file", "create_file"):
-        path = args.get("path", args.get("filename", "/tmp/output"))
-        content = args.get("content", "")
-        escaped_content = content.replace("'", "'\\''")
-        return f"echo '{escaped_content}' > {path}"
+        path = _safe_quote(args.get("path", args.get("filename", "/tmp/output")))
+        content = _safe_quote(args.get("content", ""))
+        return f"echo {content} > {path}"
 
     if tool_name in ("delete_file", "remove_file"):
-        path = args.get("path", args.get("filename", ""))
+        path = _safe_quote(args.get("path", args.get("filename", "")))
         return f"rm -f {path}"
 
     if tool_name in ("read_file", "cat"):
-        path = args.get("path", args.get("filename", ""))
+        path = _safe_quote(args.get("path", args.get("filename", "")))
         return f"cat {path}"
 
-    # Network operations
+    # Network operations - quote all values
     if tool_name in ("curl", "http_request", "fetch"):
-        url = args.get("url", "")
-        method = args.get("method", "GET").upper()
-        return f"curl -X {method} '{url}'"
+        url = _safe_quote(args.get("url", ""))
+        method = _safe_quote(args.get("method", "GET").upper()[:10])
+        return f"curl -X {method} {url}"
 
     if tool_name in ("send_email", "email"):
         to = args.get("to", args.get("recipient", ""))
         subject = args.get("subject", "")
         body = args.get("body", args.get("content", ""))
-        return f"echo 'Would send email to: {to}, Subject: {subject}, Body: {body[:100]}...'"
+        msg = f"Would send email to: {to}, Subject: {subject}, Body: {body[:100]}..."
+        return f"echo {_safe_quote(msg)}"
 
-    # Default: just echo the tool call info
-    return f"echo 'Tool: {tool_name}, Args: {json.dumps(args)[:200]}'"
+    # Default: just echo the tool call info (safely quoted)
+    info = f"Tool: {tool_name}, Args: {json.dumps(args)[:200]}"
+    return f"echo {_safe_quote(info)}"
 
 
 async def execute_sandbox(

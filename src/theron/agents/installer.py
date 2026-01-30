@@ -179,18 +179,39 @@ class AgentInstaller:
         return True
 
     def _run_install(self, command: str) -> bool:
-        """Run the installation command."""
+        """Run the installation command.
+
+        SECURITY: Uses shlex.split() instead of shell=True to prevent command injection.
+        """
+        import shlex
+
         try:
-            # Run with shell for complex commands
+            # Parse command safely - no shell injection possible
+            args = shlex.split(command)
+            if not args:
+                print("\n❌ Empty command")
+                return False
+
+            # Validate first argument is a known safe command
+            allowed_commands = {"pip", "pip3", "npm", "npx", "yarn", "docker", "git", "brew"}
+            base_cmd = args[0].split("/")[-1]  # Handle full paths
+            if base_cmd not in allowed_commands:
+                print(f"\n❌ Command not in allowed list: {base_cmd}")
+                print(f"   Allowed: {', '.join(sorted(allowed_commands))}")
+                return False
+
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,  # SECURITY: Never use shell=True
                 check=True,
                 text=True,
             )
             return result.returncode == 0
         except subprocess.CalledProcessError as e:
             print(f"\n❌ Command failed with exit code {e.returncode}")
+            return False
+        except ValueError as e:
+            print(f"\n❌ Invalid command syntax: {e}")
             return False
         except Exception as e:
             print(f"\n❌ Error: {e}")

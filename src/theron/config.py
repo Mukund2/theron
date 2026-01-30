@@ -1,25 +1,35 @@
 """Configuration management for Theron."""
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Hardcoded allowed API endpoints - SECURITY: prevents SSRF
+ALLOWED_ENDPOINTS = frozenset({
+    "https://api.anthropic.com",
+    "https://api.openai.com",
+})
 
 
 class ProxyConfig(BaseModel):
     """Proxy server configuration."""
 
     listen_port: int = 8081
-    endpoints: dict[str, str] = Field(
-        default_factory=lambda: {
+    # SECURITY: Endpoints are hardcoded and cannot be overridden via config
+    timeout: int = 120
+    passthrough_auth: bool = True
+
+    @property
+    def endpoints(self) -> dict[str, str]:
+        """Return hardcoded endpoints - not configurable for security."""
+        return {
             "anthropic": "https://api.anthropic.com",
             "openai": "https://api.openai.com",
         }
-    )
-    timeout: int = 120
-    passthrough_auth: bool = True
 
 
 class DetectionConfig(BaseModel):
@@ -38,6 +48,41 @@ class DetectionConfig(BaseModel):
         }
     )
     custom_patterns: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("custom_patterns")
+    @classmethod
+    def validate_patterns(cls, patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Validate custom patterns for security (ReDoS prevention)."""
+        validated = []
+        for p in patterns:
+            pattern = p.get("pattern", "")
+            if not pattern or len(pattern) > 500:  # Limit pattern length
+                continue
+            # Check for dangerous ReDoS patterns
+            if cls._is_redos_vulnerable(pattern):
+                continue  # Skip dangerous patterns silently
+            try:
+                re.compile(pattern)
+                validated.append(p)
+            except re.error:
+                continue  # Skip invalid patterns
+        return validated
+
+    @staticmethod
+    def _is_redos_vulnerable(pattern: str) -> bool:
+        """Check if pattern is potentially vulnerable to ReDoS."""
+        # Patterns with nested quantifiers are dangerous
+        dangerous_patterns = [
+            r'\(\[?[^)]*[+*]\)?[+*]',  # (a+)+ or [a+]+ patterns
+            r'\([^)]+\|[^)]+\)[+*]',   # (a|b)+ alternation with quantifier
+            r'\.+\*',                   # .+* or .*+
+            r'\*\+',                    # *+
+            r'\+\+',                    # ++
+        ]
+        for dp in dangerous_patterns:
+            if re.search(dp, pattern):
+                return True
+        return False
 
 
 class ClassificationConfig(BaseModel):
@@ -112,13 +157,9 @@ def get_default_config() -> str:
 #----------------------------------------------------------------------
 proxy:
   listen_port: 8081
-
-  endpoints:
-    anthropic: "https://api.anthropic.com"
-    openai: "https://api.openai.com"
-
   timeout: 120
   passthrough_auth: true
+  # NOTE: API endpoints are hardcoded for security and cannot be changed
 
 #----------------------------------------------------------------------
 # DETECTION SETTINGS
