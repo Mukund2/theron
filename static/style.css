@@ -75,6 +75,284 @@
     box-sizing: border-box;
 }
 
+/* ============================================
+   SIMPLE VIEW (Default for non-technical users)
+   ============================================ */
+
+.simple-view {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Header adjustments for simple view */
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.connection-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-danger);
+}
+
+.connection-indicator.connected {
+    background: var(--color-success);
+}
+
+.link-button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    text-decoration: underline;
+    font-family: var(--font-ui);
+}
+
+.link-button:hover {
+    color: var(--text-secondary);
+}
+
+/* Status Hero - Big friendly status display */
+.status-hero {
+    margin-bottom: var(--space-6);
+}
+
+.protection-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-6);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+}
+
+.protection-status.protected {
+    border-color: var(--color-success);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(63, 185, 80, 0.05) 100%);
+}
+
+.protection-status.alert {
+    border-color: var(--color-danger);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, rgba(248, 81, 73, 0.05) 100%);
+}
+
+.status-icon {
+    flex-shrink: 0;
+}
+
+.status-icon .icon-shield {
+    width: 80px;
+    height: 80px;
+    color: var(--color-success);
+}
+
+.protection-status.alert .icon-shield {
+    color: var(--color-danger);
+}
+
+.status-icon .checkmark {
+    stroke: var(--color-success);
+    stroke-width: 2.5;
+}
+
+.status-text h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+
+.status-text p {
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+/* Simple Stats */
+.simple-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.simple-stat {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    text-align: center;
+}
+
+.simple-stat-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    line-height: 1;
+    margin-bottom: var(--space-2);
+}
+
+.simple-stat:first-child .simple-stat-value {
+    color: var(--color-success);
+}
+
+.simple-stat-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+/* Activity Section */
+.activity-section {
+    margin-bottom: var(--space-6);
+}
+
+.activity-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-4);
+}
+
+.simple-activity {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.empty-activity {
+    padding: var(--space-6);
+    text-align: center;
+}
+
+.empty-activity p {
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+}
+
+/* Activity Items */
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-muted);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.activity-dot.safe {
+    background: var(--color-success);
+}
+
+.activity-dot.blocked {
+    background: var(--color-danger);
+}
+
+.activity-dot.warning {
+    background: var(--color-warning);
+}
+
+.activity-text {
+    flex: 1;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.activity-text strong {
+    color: var(--text-primary);
+}
+
+.activity-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+/* Help Section */
+.help-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-4);
+}
+
+.help-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+}
+
+.help-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    text-align: center;
+}
+
+.help-icon {
+    font-size: 2rem;
+    margin-bottom: var(--space-3);
+}
+
+.help-card h4 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+
+.help-card p {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+/* Responsive for simple view */
+@media (max-width: 768px) {
+    .help-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .protection-status {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .status-icon .icon-shield {
+        width: 60px;
+        height: 60px;
+    }
+}
+
+/* ============================================
+   ADVANCED VIEW (Technical users)
+   ============================================ */
+
+.advanced-view {
+    /* Uses existing styles */
+}
+
 html {
     font-size: 14px;
 }

@@ -166,10 +166,16 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 - WebSocket: /api/events/stream
 
 **Static UI** (`static/`)
-- Real-time event feed via WebSocket
-- Blocked actions log (auto-rejected dangerous actions)
-- Statistics and charts
-- Industrial/cybersecurity aesthetic
+- **Simple View** (default): Friendly dashboard for non-technical users
+  - Big "Your AI is Protected" status indicator
+  - "Threats Blocked" and "Requests Today" counters
+  - Simple activity feed with plain language
+  - "How it works" explanation cards
+- **Advanced View** (toggle): Technical dashboard for power users
+  - Real-time event feed via WebSocket
+  - Blocked actions log with full details
+  - Statistics and charts
+  - Configuration controls
 
 #### 8. Storage (`src/theron/storage/`)
 
@@ -238,6 +244,8 @@ theron/
 │   ├── test_intelligence.py # 32 tests
 │   ├── test_autonomy.py     # 35 tests
 │   └── test_setup.py        # 38 tests
+├── install.sh              # Unix installer (curl | sh)
+├── install.ps1             # Windows installer (PowerShell)
 ├── config/default.yaml
 ├── Dockerfile
 ├── docker-compose.yaml
@@ -247,13 +255,24 @@ theron/
 
 ## Quick Start (For Users)
 
+**One command. That's it.**
+
+```bash
+curl -fsSL https://get.theron.dev | sh
+```
+
+For Windows (PowerShell):
+```powershell
+irm https://get.theron.dev/install.ps1 | iex
+```
+
+Manual installation (if you prefer):
 ```bash
 pip install theron
 theron setup
-# Restart terminal - done!
 ```
 
-That's it. After setup:
+Restart your terminal. After setup:
 - Theron starts automatically when you log in
 - All AI agents are automatically protected
 - No configuration needed

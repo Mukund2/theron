@@ -36,10 +36,29 @@ AI agents (Claude Code, AutoGPT, Moltbot) can execute shell commands, send email
 
 ## Installation
 
+**One command. That's it.**
+
+```bash
+curl -fsSL https://get.theron.dev | sh
+```
+
+<details>
+<summary>Windows (PowerShell)</summary>
+
+```powershell
+irm https://get.theron.dev/install.ps1 | iex
+```
+</details>
+
+<details>
+<summary>Manual installation</summary>
+
+If you prefer to install manually:
 ```bash
 pip install theron
 theron setup
 ```
+</details>
 
 Restart your terminal. **Done.** All your AI agents are now protected.
 

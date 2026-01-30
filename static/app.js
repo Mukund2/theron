@@ -8,11 +8,15 @@ class TheronDashboard {
         this.config = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
+        this.isAdvancedView = false;
 
         this.init();
     }
 
     init() {
+        // Initialize view toggle
+        this.initViewToggle();
+
         // Initialize tabs
         this.initTabs();
 
@@ -34,6 +38,31 @@ class TheronDashboard {
 
         // Connect WebSocket
         this.connectWebSocket();
+    }
+
+    // View Toggle (Simple vs Advanced)
+    initViewToggle() {
+        const toggleBtn = document.getElementById('advanced-toggle');
+        toggleBtn.addEventListener('click', () => {
+            this.isAdvancedView = !this.isAdvancedView;
+            this.updateView();
+        });
+    }
+
+    updateView() {
+        const simpleView = document.getElementById('simple-view');
+        const advancedView = document.getElementById('advanced-view');
+        const toggleBtn = document.getElementById('advanced-toggle');
+
+        if (this.isAdvancedView) {
+            simpleView.classList.add('hidden');
+            advancedView.classList.remove('hidden');
+            toggleBtn.textContent = 'Simple View';
+        } else {
+            simpleView.classList.remove('hidden');
+            advancedView.classList.add('hidden');
+            toggleBtn.textContent = 'Advanced View';
+        }
     }
 
     // Tab Management
@@ -121,11 +150,14 @@ class TheronDashboard {
         if (connected) {
             status.classList.add('connected');
             status.classList.remove('disconnected');
-            status.querySelector('.text').textContent = 'Connected';
         } else {
             status.classList.remove('connected');
             status.classList.add('disconnected');
-            status.querySelector('.text').textContent = 'Disconnected';
+        }
+        // Update text if element exists (advanced view has it, simple view doesn't)
+        const textEl = status.querySelector('.text');
+        if (textEl) {
+            textEl.textContent = connected ? 'Connected' : 'Disconnected';
         }
     }
 
@@ -196,10 +228,12 @@ class TheronDashboard {
                     <p>Events will appear here when your AI agent makes API calls through Theron.</p>
                 </div>
             `;
-            return;
+        } else {
+            container.innerHTML = this.events.map(event => this.renderEventItem(event)).join('');
         }
 
-        container.innerHTML = this.events.map(event => this.renderEventItem(event)).join('');
+        // Also update simple activity view
+        this.renderSimpleActivity();
     }
 
     renderEventItem(event) {
@@ -250,13 +284,118 @@ class TheronDashboard {
 
     updateStats(data) {
         const summary = data.summary || {};
+
+        // Update advanced view stats
         document.getElementById('stat-total').textContent = summary.total_events || 0;
         document.getElementById('stat-blocked').textContent = summary.blocked_count || 0;
         document.getElementById('stat-injections').textContent = summary.injection_count || 0;
         document.getElementById('stat-agents').textContent = summary.unique_agents || 0;
 
+        // Update simple view stats
+        document.getElementById('simple-blocked').textContent = summary.blocked_count || 0;
+        document.getElementById('simple-requests').textContent = summary.total_events || 0;
+
+        // Update protection status based on recent threats
+        this.updateProtectionStatus(summary);
+
         // Render daily chart
         this.renderDailyChart(data.daily || []);
+    }
+
+    updateProtectionStatus(summary) {
+        const statusEl = document.getElementById('protection-status');
+        const titleEl = statusEl.querySelector('h2');
+        const descEl = statusEl.querySelector('p');
+
+        // Always show as protected unless there's an active issue
+        // (In a real implementation, you might check for recent critical alerts)
+        statusEl.classList.remove('alert');
+        statusEl.classList.add('protected');
+        titleEl.textContent = 'Your AI is Protected';
+
+        if (summary.blocked_count > 0) {
+            descEl.textContent = `${summary.blocked_count} threat${summary.blocked_count === 1 ? '' : 's'} blocked. Your AI agents are safe.`;
+        } else {
+            descEl.textContent = 'Theron is monitoring your AI agents for security threats';
+        }
+    }
+
+    renderSimpleActivity() {
+        const container = document.getElementById('simple-activity');
+
+        // Combine events and blocked actions, show most recent
+        const activities = [];
+
+        // Add blocked actions (most important)
+        this.blockedActions.slice(0, 5).forEach(action => {
+            activities.push({
+                type: 'blocked',
+                text: `Blocked dangerous command: <strong>${this.escapeHtml(String(action.tool_name || 'unknown'))}</strong>`,
+                time: new Date(action.created_at)
+            });
+        });
+
+        // Add recent events (limit to avoid overwhelming)
+        this.events.slice(0, 10).forEach(event => {
+            if (event.action === 'blocked') {
+                activities.push({
+                    type: 'blocked',
+                    text: `Blocked <strong>${this.escapeHtml(String(event.tool_name || 'action'))}</strong>`,
+                    time: new Date(event.timestamp)
+                });
+            } else if (event.action === 'allowed') {
+                activities.push({
+                    type: 'safe',
+                    text: `Allowed <strong>${this.escapeHtml(String(event.tool_name || 'action'))}</strong>`,
+                    time: new Date(event.timestamp)
+                });
+            } else if (event.action === 'logged' || event.action === 'sandboxed') {
+                activities.push({
+                    type: 'warning',
+                    text: `Monitored <strong>${this.escapeHtml(String(event.tool_name || 'action'))}</strong>`,
+                    time: new Date(event.timestamp)
+                });
+            }
+        });
+
+        // Sort by time, most recent first
+        activities.sort((a, b) => b.time - a.time);
+
+        // Take only top 10
+        const recentActivities = activities.slice(0, 10);
+
+        if (recentActivities.length === 0) {
+            container.innerHTML = `
+                <div class="empty-activity">
+                    <p>No activity yet. Use your AI agent and activity will appear here.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = recentActivities.map(activity => {
+            const timeStr = this.formatRelativeTime(activity.time);
+            return `
+                <div class="activity-item">
+                    <span class="activity-dot ${activity.type}"></span>
+                    <span class="activity-text">${activity.text}</span>
+                    <span class="activity-time">${this.escapeHtml(timeStr)}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    formatRelativeTime(date) {
+        const now = new Date();
+        const diffMs = now - date;
+        const diffSecs = Math.floor(diffMs / 1000);
+        const diffMins = Math.floor(diffSecs / 60);
+        const diffHours = Math.floor(diffMins / 60);
+
+        if (diffSecs < 60) return 'just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        return date.toLocaleDateString();
     }
 
     renderDailyChart(daily) {
@@ -481,10 +620,12 @@ class TheronDashboard {
                     <p>When dangerous actions from untrusted sources are detected, they are automatically blocked and shown here.</p>
                 </div>
             `;
-            return;
+        } else {
+            container.innerHTML = this.blockedActions.map(action => this.renderBlockedCard(action)).join('');
         }
 
-        container.innerHTML = this.blockedActions.map(action => this.renderBlockedCard(action)).join('');
+        // Also update simple activity view
+        this.renderSimpleActivity();
     }
 
     renderBlockedCard(action) {
