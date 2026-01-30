@@ -166,16 +166,12 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 - WebSocket: /api/events/stream
 
 **Static UI** (`static/`)
-- **Simple View** (default): Friendly dashboard for non-technical users
-  - Big "Your AI is Protected" status indicator
-  - "Threats Blocked" and "Requests Today" counters
-  - Simple activity feed with plain language
-  - "How it works" explanation cards
-- **Advanced View** (toggle): Technical dashboard for power users
-  - Real-time event feed via WebSocket
-  - Blocked actions log with full details
-  - Statistics and charts
-  - Configuration controls
+- Simple, friendly dashboard (like Brave/DuckDuckGo privacy stats)
+- Big shield icon with "Protected" status
+- Two counters: "Threats Blocked" and "Requests Checked"
+- "Recently Blocked" list showing last 5 blocked actions
+- Real-time updates via WebSocket
+- No configuration or technical details exposed
 
 #### 8. Storage (`src/theron/storage/`)
 
