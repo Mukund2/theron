@@ -165,7 +165,7 @@ Theron is a **security proxy for agentic AI systems**. It sits between AI agents
 - Behavioral: /api/agents/{id}/profile, /anomalies, /profiles
 - WebSocket: /api/events/stream
 
-**Static UI** (`static/`)
+**Static UI** (`src/theron/static/`)
 - Simple, friendly dashboard (like Brave/DuckDuckGo privacy stats)
 - Big shield icon with "Protected" status
 - Two counters: "Threats Blocked" and "Requests Checked"
@@ -225,13 +225,13 @@ theron/
 │   ├── storage/
 │   │   ├── database.py      # SQLite operations
 │   │   └── models.py        # Pydantic models
-│   └── dashboard/
-│       ├── api.py           # REST + WebSocket endpoints
-│       └── websocket.py     # Event broadcasting
-├── static/
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
+│   ├── dashboard/
+│   │   ├── api.py           # REST + WebSocket endpoints
+│   │   └── websocket.py     # Event broadcasting
+│   └── static/              # Dashboard UI (bundled in package)
+│       ├── index.html
+│       ├── style.css
+│       └── app.js
 ├── tests/
 │   ├── test_detector.py     # 13 tests
 │   ├── test_classifier.py   # 13 tests
@@ -458,7 +458,7 @@ Theron implements defense-in-depth with multiple layers of security:
 - Credentials disabled
 - Explicit method allowlist
 
-### Frontend Security (static/app.js)
+### Frontend Security (src/theron/static/app.js)
 
 **XSS Prevention**
 - All external data escaped via `escapeHtml()`

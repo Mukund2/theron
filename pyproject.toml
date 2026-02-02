@@ -49,6 +49,12 @@ theron = "theron.main:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/theron"]
 
+[tool.hatch.build]
+include = [
+    "src/theron/**/*.py",
+    "src/theron/static/*",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

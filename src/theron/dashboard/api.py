@@ -21,8 +21,8 @@ from ..storage.models import AlertFilter, EventFilter, SandboxFilter, SandboxRes
 
 logger = logging.getLogger(__name__)
 
-# Get the static files directory
-STATIC_DIR = Path(__file__).parent.parent.parent.parent / "static"
+# Get the static files directory (inside the package)
+STATIC_DIR = Path(__file__).parent.parent / "static"
 
 
 class ConnectionManager:
